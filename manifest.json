@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "id": "omarchy.power",
-  "name": "Power",
-  "version": "1.0.0",
-  "author": "Omarchy",
+  "id": "io.github.houtvongsak.power-byxax",
+  "name": "power-byxax",
+  "version": "0.1.0",
+  "author": "houtvongsak",
   "description": "Battery, power profile, and system stats",
   "kinds": [
     "bar-widget"
@@ -12,9 +12,12 @@
     "barWidget": "Panel.qml"
   },
   "barWidget": {
-    "displayName": "Power",
+    "displayName": "power-byxax",
     "description": "Battery, power profile, and system stats",
     "category": "System",
     "allowMultiple": false
+  },
+  "omarchy": {
+    "clonedFrom": "omarchy.power"
   }
 }
