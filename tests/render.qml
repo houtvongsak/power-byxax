@@ -39,7 +39,7 @@ ShellRoot {
         power.previewDetails.historyOpen = Quickshell.env("POWER_PREVIEW_HISTORY") === "1"
         power.previewDetails.detailsOpen = Quickshell.env("POWER_PREVIEW_DETAILS") === "1"
         power.profiles = ["power-saver", "balanced", "performance"]
-        power.activeProfile = "balanced"
+        power.activeProfile = Quickshell.env("POWER_PREVIEW_PROFILE") || "balanced"
         power.phraseIndex = 1
       }
     }

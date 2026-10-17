@@ -28,6 +28,29 @@ Linux drivers.
 Readings update every 5 seconds. History stays on your device and records while
 the popup is closed.
 
+## Screenshots
+
+<details>
+<summary>Details</summary>
+
+<img src="screenshots/details.png" width="380" alt="Battery details with health and capacity readings">
+
+</details>
+
+<details>
+<summary>History</summary>
+
+<img src="screenshots/history.png" width="380" alt="Battery current and voltage history with timestamped events">
+
+</details>
+
+<details>
+<summary>Details + History</summary>
+
+<img src="screenshots/full.png" width="380" alt="Power panel with details and history expanded together">
+
+</details>
+
 ## Update
 
 ```sh
