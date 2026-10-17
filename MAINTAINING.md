@@ -21,6 +21,9 @@ baseline is v4.0.4, `c668141e9c42b13c80c9ca4ea108e11708c5e8a5`.
 Monday, and supports **Run workflow**. It uses the same tested `bin/sync-stock`
 script available locally. That script validates the source, mirrors upstream
 including deletions, and merges into main. It never pushes main itself.
+The scheduled check runs at 04:00 UTC. Successful updates publish patch releases;
+installed users receive them through `omarchy plugin update`. GitHub repository
+watch settings control issue and release notifications.
 
 Clean merges run `bin/check` in a job with read-only repository permissions.
 Validated main/upstream commits are transferred as an immutable workflow artifact.
@@ -89,6 +92,40 @@ state storage. It checks two successive live samples and verifies graph objects
 are created only while open, without opening its popup
 or changing the installed bar. `bin/preview` renders `BatteryDetails.qml` in an
 isolated window to a PNG; it does not capture desktop content.
+
+```sh
+python3 bin/telemetry.py > /tmp/power-snapshot.json
+bin/preview /tmp/power-snapshot.json /tmp/power-preview.png --history
+```
+
+## Readings and troubleshooting
+
+For a snapshot without writing history, run `python3 bin/telemetry.py`.
+To inspect the installed panel's interpreted status:
+
+```sh
+omarchy-shell omarchy.power status
+```
+
+The collector prefers kernel sysfs readings and uses `busctl` for UPower fallback.
+It samples every 5 seconds, with up to 15 seconds of averaging within the same
+battery state. Supplementary UPower metadata is cached for 30 seconds when kernel
+readings are complete; fallback measurements and connection/state changes trigger
+fresh queries. A single collector is shared across bars and monitors.
+
+History is saved to `${XDG_STATE_HOME:-~/.local/state}/power-byxax/history.json`.
+The collector runs while the widget is loaded, including when its popup is closed,
+without installing a system service or sending readings online.
+
+Missing values are not treated as zero. An ≈ marks current estimated from watts
+divided by volts. Kernel charge thresholds take precedence over UPower metadata;
+UPower's configured thresholds alone do not prove a limit is enabled. Firmware
+can report inaccurate values, including zero cycles. Health is reported full
+capacity relative to design capacity.
+
+Current and voltage trends do not establish a recovery mode, thermal protection,
+or a faulty jack. CPU temperature is not used as battery temperature. Sampling
+can miss short connection changes, and suspend/logout periods contain no readings.
 
 For fake hardware, put plain-text sysfs-style attributes in a temporary directory:
 
