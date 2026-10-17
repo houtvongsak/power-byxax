@@ -38,73 +38,77 @@ Column {
     }
   }
 
-  // Stock two-column battery stats, followed by the extra sensor readings.
-  Row {
-    width: parent.width
-    spacing: Style.space(20)
-    Column {
-      width: (parent.width - parent.spacing) / 2
-      spacing: Style.spacing.labelGap
-      InfoPair { label: "Battery size"; value: Diagnostics.metric(root.battery.fullWh, "Wh", 0) }
-      InfoPair { label: "Charge cycles"; value: Diagnostics.known(root.battery.cycles) ? String(root.battery.cycles) : "—" }
-    }
-    Column {
-      width: (parent.width - parent.spacing) / 2
-      spacing: Style.spacing.labelGap
-      InfoPair {
-        label: root.reading.code === "limit" ? "Charge limit" : root.reading.code === "discharging" ? "Time left" : "Time to full"
-        value: root.reading.code === "limit" ? root.battery.limitPercent + "%"
-          : !root.fresh ? "Unavailable"
-          : root.reading.code === "discharging" ? Diagnostics.duration(root.battery.timeToEmptyS)
-          : ["charging", "slow"].indexOf(root.reading.code) !== -1 ? Diagnostics.duration(root.battery.timeToFullS) : "—"
-      }
-      InfoPair {
-        label: root.reading.code === "discharging" ? "Discharging" : ["charging", "slow"].indexOf(root.reading.code) !== -1 ? "Charging" : "Power"
-        value: Diagnostics.metric(root.fresh ? root.reading.powerW : null, "W", 1)
-      }
-    }
-  }
-
-  Row {
-    width: parent.width
-    spacing: Style.space(20)
-    Column {
-      width: (parent.width - parent.spacing) / 2
-      InfoPair { label: "Current" + (root.battery.currentEstimated ? " ≈" : ""); value: Diagnostics.amps(root.fresh ? root.reading.currentA : null) }
-    }
-    Column {
-      width: (parent.width - parent.spacing) / 2
-      InfoPair { label: "Voltage"; value: Diagnostics.metric(root.fresh ? root.reading.voltageV : null, "V") }
-    }
-  }
-  Detail {
-    label: "External power"
-    value: !root.fresh ? "Unavailable" : root.snapshot.acOnline === true ? "Connected" : root.snapshot.acOnline === false ? "Disconnected" : "Unknown"
-  }
-  Text {
-    visible: root.reading.unstable === true
-    width: parent.width
-    text: "Power connection unstable"
-    wrapMode: Text.WordWrap
-    color: root.foreground
-    font.family: root.fontFamily
-    font.pixelSize: Style.font.bodySmall
-  }
-  Detail {
-    visible: root.reading.code !== "limit" && (root.detailsOpen || Diagnostics.known(root.battery.limitPercent) && root.battery.limitPercent < 100)
-    label: "Charge limit"
-    value: !Diagnostics.known(root.battery.limitPercent) ? "Unavailable"
-      : root.battery.limitPercent === 100 ? "100% · No reduced limit"
-      : root.battery.limitPercent + "%"
-  }
   Column {
-    visible: root.detailsOpen
     width: parent.width
-    spacing: root.spacing
-    Detail { label: "State observed for"; value: root.fresh ? Diagnostics.duration(root.now - root.reading.since) : "Unavailable" }
-    Detail { label: "Battery health"; value: Diagnostics.metric(root.battery.healthPercent, "%", 0) }
-    Detail { label: "Design capacity"; value: Diagnostics.metric(root.battery.designWh, "Wh", 1) }
-    Detail { label: "Temperature"; value: Diagnostics.metric(root.battery.temperatureC, "°C", 1) }
+    spacing: Style.spacing.labelGap
+    // Stock two-column battery stats, followed by the extra sensor readings.
+    Row {
+      width: parent.width
+      spacing: Style.space(20)
+      Column {
+        width: (parent.width - parent.spacing) / 2
+        spacing: Style.spacing.labelGap
+        InfoPair { label: "Battery size"; value: Diagnostics.metric(root.battery.fullWh, "Wh", 0) }
+        InfoPair { label: "Charge cycles"; value: Diagnostics.known(root.battery.cycles) ? String(root.battery.cycles) : "—" }
+      }
+      Column {
+        width: (parent.width - parent.spacing) / 2
+        spacing: Style.spacing.labelGap
+        InfoPair {
+          label: root.reading.code === "limit" ? "Charge limit" : root.reading.code === "discharging" ? "Time left" : "Time to full"
+          value: root.reading.code === "limit" ? root.battery.limitPercent + "%"
+            : !root.fresh ? "Unavailable"
+            : root.reading.code === "discharging" ? Diagnostics.duration(root.battery.timeToEmptyS)
+            : ["charging", "slow"].indexOf(root.reading.code) !== -1 ? Diagnostics.duration(root.battery.timeToFullS) : "—"
+        }
+        InfoPair {
+          label: root.reading.code === "discharging" ? "Discharging" : ["charging", "slow"].indexOf(root.reading.code) !== -1 ? "Charging" : "Power"
+          value: Diagnostics.metric(root.fresh ? root.reading.powerW : null, "W", 1)
+        }
+      }
+    }
+
+    Row {
+      width: parent.width
+      spacing: Style.space(20)
+      Column {
+        width: (parent.width - parent.spacing) / 2
+        InfoPair { label: "Current" + (root.battery.currentEstimated ? " ≈" : ""); value: Diagnostics.amps(root.fresh ? root.reading.currentA : null) }
+      }
+      Column {
+        width: (parent.width - parent.spacing) / 2
+        InfoPair { label: "Voltage"; value: Diagnostics.metric(root.fresh ? root.reading.voltageV : null, "V") }
+      }
+    }
+    Detail {
+      label: "External power"
+      value: !root.fresh ? "Unavailable" : root.snapshot.acOnline === true ? "Connected" : root.snapshot.acOnline === false ? "Disconnected" : "Unknown"
+    }
+    Text {
+      visible: root.reading.unstable === true
+      width: parent.width
+      text: "Power connection unstable"
+      wrapMode: Text.WordWrap
+      color: root.foreground
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
+    }
+    Detail {
+      visible: root.reading.code !== "limit" && (root.detailsOpen || Diagnostics.known(root.battery.limitPercent) && root.battery.limitPercent < 100)
+      label: "Charge limit"
+      value: !Diagnostics.known(root.battery.limitPercent) ? "Unavailable"
+        : root.battery.limitPercent === 100 ? "100% · No reduced limit"
+        : root.battery.limitPercent + "%"
+    }
+    Column {
+      visible: root.detailsOpen
+      width: parent.width
+      spacing: Style.spacing.labelGap
+      Detail { label: "State observed for"; value: root.fresh ? Diagnostics.duration(root.now - root.reading.since) : "Unavailable" }
+      Detail { label: "Battery health"; value: Diagnostics.metric(root.battery.healthPercent, "%", 0) }
+      Detail { label: "Design capacity"; value: Diagnostics.metric(root.battery.designWh, "Wh", 1) }
+      Detail { label: "Temperature"; value: Diagnostics.metric(root.battery.temperatureC, "°C", 1) }
+    }
   }
 
   Row {
