@@ -55,6 +55,9 @@ function classify(sample, battery, history) {
     return { code: code, label: label, reason: reason, currentA: current, powerW: rate,
       voltageV: average(points, "voltageV"), settled: settled }
   }
+  if (known(battery.currentA) && known(battery.powerW)
+      && ((battery.currentA === 0 && battery.powerW > 0.2) || (battery.powerW === 0 && battery.currentA > 0.02)))
+    return result("conflict", "Readings disagree", "Battery current and power readings disagree. Waiting for consistent measurements.")
   if (status === "Discharging" || status === "Empty") {
     return result("discharging", online === true ? "Battery draining on AC" : "On battery",
       online === true ? "External power is detected, but the battery reports discharge. The cause is unknown."

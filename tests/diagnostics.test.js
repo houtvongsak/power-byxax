@@ -75,6 +75,10 @@ test('discharging positive ACPI current and negative signed current have the sam
 test('pending state with significant flow is a conflict, not a made-up recovery explanation', () => {
   assert.equal(classify({currentA: 1, powerW: 15}).code, 'conflict');
 });
+test('conflicting current and watt sensors cannot produce a confident idle or charging label', () => {
+  assert.equal(classify({status: 'Charging', currentA: 0, powerW: 30}).code, 'conflict');
+  assert.equal(classify({status: 'Charging', currentA: 1, powerW: 0}).code, 'conflict');
+});
 test('full only when the battery reports full near 100%', () => {
   assert.equal(classify({status: 'Full', percentage: 100}).code, 'full');
   assert.equal(classify({status: 'Full', percentage: 60}).code, 'idle');

@@ -324,7 +324,7 @@ Panel {
       onActivateRequested: if (root.cursorActive) root.activateSelectedProfile()
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
-      onTextKey: function(t) { if (t === "h") diagnosticDetails.historyOpen = !diagnosticDetails.historyOpen }
+      onTextKey: function(t) { if (t === "g") diagnosticDetails.historyOpen = !diagnosticDetails.historyOpen }
 
       Flickable {
         anchors.fill: parent

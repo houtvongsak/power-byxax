@@ -23,7 +23,7 @@ based on the readings your laptop actually provides.
 - Current, voltage, and power update every **5 seconds**, with up to **15 seconds of averaging** within the same battery state. Small currents use **mA**.
 - Select individual batteries on laptops with multiple packs. Battery names are discovered automatically.
 - See the configured charge limit, estimated remaining time, health, full/design capacity, reported cycles, and temperature where available.
-- Press **h** or click **Show history** for current/voltage graphs and recent connection/state changes.
+- Press **g** or click **Show history** for current/voltage graphs and recent connection/state changes.
 - History covers the last **30 minutes**, survives shell reloads, and marks observation gaps.
 - Several observed AC changes within two minutes show a **Power connection unstable** notice. This does not diagnose a cable, jack, or charger fault.
 

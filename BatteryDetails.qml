@@ -110,7 +110,7 @@ Column {
 
   Button {
     width: parent.width
-    text: root.historyOpen ? "Hide history (h)" : "Show history · last 30 minutes (h)"
+    text: root.historyOpen ? "Hide history (g)" : "Show history · last 30 minutes (g)"
     bordered: true
     foreground: root.foreground
     fontFamily: root.fontFamily

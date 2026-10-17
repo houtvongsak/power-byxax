@@ -161,6 +161,18 @@ class TelemetryTests(unittest.TestCase):
         self.assertEqual(len(result["history"]), 1)
         self.assertEqual(result["events"], [])
 
+    def test_full_native_path_does_not_duplicate_a_pack(self):
+        self.supply("BAT0", type="Battery", status="Charging", capacity=40)
+        props = dict(Type=2, PowerSupply=True, NativePath="/sys/devices/test/power_supply/BAT0", IsPresent=True)
+        sample = t.collect(self.root, [props], 100)
+        self.assertEqual(len(sample["batteries"]), 1)
+        self.assertEqual(sample["batteries"][0]["id"], "BAT0")
+
+    def test_absent_kernel_pack_is_not_resurrected_by_upower_lag(self):
+        self.supply("BAT0", type="Battery", present=0)
+        props = dict(Type=2, PowerSupply=True, NativePath="BAT0", IsPresent=True)
+        self.assertEqual(t.collect(self.root, [props], 100)["batteries"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

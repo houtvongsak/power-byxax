@@ -70,6 +70,10 @@ def positive(value):
     return value if value is not None and value > 0 else None
 
 
+def native_id(props):
+    return str(props.get("NativePath") or "Battery").rstrip("/").rsplit("/", 1)[-1]
+
+
 def normalize_battery(path, props, now):
     """Prefer live kernel readings. UPower's measurements can lag by seconds."""
     def field(name, divisor=1, fallback=None):
@@ -79,7 +83,7 @@ def normalize_battery(path, props, now):
     updated = number(props.get("UpdateTime"))
     fresh = updated is not None and 0 <= now - updated <= 120
     live = props if fresh else {}
-    battery_id = path.name if path else str(props.get("NativePath", "Battery"))
+    battery_id = path.name if path else native_id(props)
     raw_status = read(path / "status") if path else None
     status = raw_status or STATES.get(live.get("State"), "Unknown")
     voltage = field("voltage_now", 1e6, positive(live.get("Voltage")))
@@ -163,7 +167,7 @@ def normalize_battery(path, props, now):
 def collect(root=Path("/sys/class/power_supply"), devices=None, now=None):
     now = time.time() if now is None else now
     devices = upower_devices() if devices is None else devices
-    by_native = {str(d.get("NativePath")): d for d in devices if d.get("Type") == 2 and d.get("PowerSupply")}
+    by_native = {native_id(d): d for d in devices if d.get("Type") == 2 and d.get("PowerSupply")}
     batteries, supplies, seen = [], [], set()
     try:
         paths = sorted(root.iterdir())
@@ -172,12 +176,12 @@ def collect(root=Path("/sys/class/power_supply"), devices=None, now=None):
     for path in paths:
         supply_type = read(path / "type")
         if supply_type == "Battery":
+            seen.add(path.name)
             # Exclude HID/peripheral batteries, even when exposed in sysfs.
             if read(path / "scope") == "Device" or read(path / "present") == "0":
                 continue
             props = by_native.get(path.name, {})
             batteries.append(normalize_battery(path, props, now))
-            seen.add(path.name)
         elif supply_type and supply_type != "Battery":
             online = read(path / "online")
             if online in ("0", "1") and read(path / "scope") != "Device":
