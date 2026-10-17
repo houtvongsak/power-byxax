@@ -15,7 +15,7 @@ ShellRoot {
     Rectangle {
       id: capture
       width: parent.width
-      height: card.height + caption.implicitHeight + Style.space(16)
+      height: card.height
       color: Color.popups.background
       BorderSurface {
         id: card
@@ -32,17 +32,6 @@ ShellRoot {
           width: card.width - card.contentLeftInset - card.contentRightInset
           height: power.previewContent.implicitHeight
         }
-      }
-      Text {
-        id: caption
-        anchors.top: card.bottom
-        anchors.topMargin: Style.space(8)
-        anchors.horizontalCenter: parent.horizontalCenter
-        text: Quickshell.env("POWER_PREVIEW_CAPTION") || "SIMULATED READINGS · LAYOUT PREVIEW"
-        color: Color.foreground
-        opacity: 0.4
-        font.family: Style.font.family
-        font.pixelSize: Style.font.caption
       }
       Component.onCompleted: {
         power.previewContent.parent = contentHost
