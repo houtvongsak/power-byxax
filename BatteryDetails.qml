@@ -12,6 +12,8 @@ Column {
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
   property bool historyOpen: false
+  property bool detailsOpen: false
+  property bool active: true
   readonly property var battery: reading.battery || ({})
   signal batteryPicked(string batteryId)
   spacing: Style.space(10)
@@ -92,110 +94,75 @@ Column {
   Detail { label: "External power"; value: root.snapshot.acOnline === true ? "Connected" : root.snapshot.acOnline === false ? "Disconnected" : "Unknown" }
   Detail { label: "State observed for"; value: root.reading.code === "stale" ? "Unavailable" : Diagnostics.duration(root.now - root.reading.since) }
   Detail {
+    visible: root.detailsOpen || Diagnostics.known(root.battery.limitPercent) && root.battery.limitPercent < 100
     label: "Charge limit"
     value: !Diagnostics.known(root.battery.limitPercent) ? "Unavailable"
       : root.battery.limitPercent === 100 ? "100% · No reduced limit"
       : root.battery.limitPercent + "%"
   }
   Detail {
+    visible: ["charging", "slow", "discharging"].indexOf(root.reading.code) !== -1
     label: root.reading.code === "discharging" ? "Time left · estimate" : "Time to full · estimate"
     value: root.reading.code === "discharging" ? Diagnostics.duration(root.battery.timeToEmptyS)
       : ["charging", "slow"].indexOf(root.reading.code) !== -1 ? Diagnostics.duration(root.battery.timeToFullS) : "Unavailable"
   }
+  Column {
+    visible: root.detailsOpen
+    width: parent.width
+    spacing: root.spacing
   Detail { label: "Battery health"; value: Diagnostics.metric(root.battery.healthPercent, "%", 0) }
   Detail { label: "Battery size"; value: Diagnostics.metric(root.battery.fullWh, "Wh", 1) }
   Detail { label: "Design capacity"; value: Diagnostics.metric(root.battery.designWh, "Wh", 1) }
   Detail { label: "Cycles · reported"; value: Diagnostics.known(root.battery.cycles) ? String(root.battery.cycles) : "Unavailable" }
   Detail { label: "Temperature"; value: Diagnostics.metric(root.battery.temperatureC, "°C", 1) }
 
-  Button {
-    width: parent.width
-    text: root.historyOpen ? "Hide history (g)" : "Show history · last 30 minutes (g)"
-    bordered: true
-    foreground: root.foreground
-    fontFamily: root.fontFamily
-    fontSize: Style.font.bodySmall
-    onClicked: root.historyOpen = !root.historyOpen
   }
 
-  Column {
-    visible: root.historyOpen
+  Row {
     width: parent.width
-    spacing: Style.space(10)
-    TrendGraph {
-      width: parent.width
-      title: "Battery current · charging ↑ / draining ↓"
-      unit: "A"
-      zeroAxis: true
+    spacing: Style.space(8)
+    Button {
+      width: (root.width - parent.spacing) / 2
+      text: root.detailsOpen ? "Hide details (d)" : "Details (d)"
+      bordered: true
       foreground: root.foreground
-      points: Diagnostics.series(root.snapshot.history, root.battery.id, "currentA")
+      fontFamily: root.fontFamily
+      fontSize: Style.font.bodySmall
+      onClicked: root.detailsOpen = !root.detailsOpen
     }
-    TrendGraph {
-      width: parent.width
-      title: "Battery voltage"
-      unit: "V"
+    Button {
+      width: (root.width - parent.spacing) / 2
+      text: root.historyOpen ? "Hide history (g)" : "History (g)"
+      bordered: true
       foreground: root.foreground
-      points: Diagnostics.series(root.snapshot.history, root.battery.id, "voltageV")
+      fontFamily: root.fontFamily
+      fontSize: Style.font.bodySmall
+      onClicked: root.historyOpen = !root.historyOpen
     }
-    Item {
-      width: parent.width
-      implicitHeight: timeStart.implicitHeight
-      Text {
-        id: timeStart
-        text: "30 minutes ago"
-        color: root.foreground
-        opacity: 0.6
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.caption
-      }
-      Text {
-        anchors.right: parent.right
-        text: "Now"
-        color: root.foreground
-        opacity: 0.6
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.caption
-      }
-    }
-    Text {
-      width: parent.width
-      text: Diagnostics.voltageTrend(root.snapshot.history, root.battery.id)
-      wrapMode: Text.WordWrap
-      color: root.foreground
-      opacity: 0.6
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.caption
-    }
-    PanelSectionHeader { text: "RECENT EVENTS"; foreground: root.foreground; fontFamily: root.fontFamily }
-    Text {
-      visible: !(root.reading.events || []).length
-      width: parent.width
-      text: "No connection or battery-state changes recorded yet."
-      wrapMode: Text.WordWrap
-      color: root.foreground
-      opacity: 0.6
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.bodySmall
-    }
-    Repeater {
-      model: (root.reading.events || []).slice(0, 8)
-      Text {
-        required property var modelData
-        width: root.width
-        text: Qt.formatDateTime(new Date(modelData.timestamp * 1000), "HH:mm:ss") + "  " + modelData.label
-        wrapMode: Text.WordWrap
-        textFormat: Text.PlainText
-        color: root.foreground
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.bodySmall
+  }
+
+  Loader {
+    objectName: "power-history-loader"
+    active: root.active && root.historyOpen
+    visible: active
+    width: parent.width
+    height: item ? item.implicitHeight : 0
+    sourceComponent: Component {
+      HistoryView {
+        snapshot: root.snapshot
+        reading: root.reading
+        battery: root.battery
+        foreground: root.foreground
+        fontFamily: root.fontFamily
       }
     }
   }
 
   Text {
+    visible: root.detailsOpen || root.battery.currentEstimated === true || root.error !== "" || (root.battery.conflicts || []).length > 0
     width: parent.width
-    text: (root.battery.id || "Battery") + (root.battery.model ? " · " + root.battery.model : "")
-      + "\n" + (root.battery.source || "Waiting for readings") + " · 5s sampling · up to 15s averages"
+    text: (root.detailsOpen ? (root.battery.id || "Battery") + (root.battery.model ? " · " + root.battery.model : "")
+      + "\n" + (root.battery.source || "Waiting for readings") + " · 5s sampling · up to 15s averages" : "")
       + (root.battery.currentEstimated ? "\nCurrent estimated from power ÷ voltage." : "")
       + (root.battery.conflicts && root.battery.conflicts.length ? "\n" + root.battery.conflicts.join("\n") : "")
       + (root.error ? "\n" + root.error : "")

@@ -7,6 +7,7 @@ import json
 import math
 import os
 from pathlib import Path
+import signal
 import subprocess
 import tempfile
 import time
@@ -14,11 +15,15 @@ import time
 WINDOW_SECONDS = 30 * 60
 MAX_SAMPLES = 361
 MAX_EVENTS = 40
+SAVE_INTERVAL = 60
+HISTORY_FIELDS = ("id", "status", "percentage", "currentA", "voltageV", "powerW", "limitPercent")
 STATES = {0: "Unknown", 1: "Charging", 2: "Discharging", 3: "Empty",
           4: "Full", 5: "Not charging", 6: "Pending discharge"}
 
 
 def number(value):
+    if isinstance(value, bool):
+        return None
     try:
         result = float(value)
         return result if math.isfinite(result) else None
@@ -28,7 +33,7 @@ def number(value):
 
 def read(path):
     try:
-        return path.read_text().strip()
+        return path.read_text(errors="replace").strip()
     except OSError:
         return None
 
@@ -49,13 +54,14 @@ def bus_call(path, interface, method, *args):
         return None
 
 
-def upower_devices():
+def upower_devices(include_lines=True):
     """Typed D-Bus properties avoid parsing localized CLI output."""
     paths = bus_call("/org/freedesktop/UPower", "org.freedesktop.UPower", "EnumerateDevices")
     devices = []
     for path in paths or []:
         # Avoid querying mice, headphones and other peripheral batteries.
-        if not any(part in path.rsplit("/", 1)[-1] for part in ("battery_", "line_power_")):
+        name = path.rsplit("/", 1)[-1]
+        if not (name.startswith("battery_") or include_lines and name.startswith("line_power_")):
             continue
         props = bus_call(path, "org.freedesktop.DBus.Properties", "GetAll",
                          "s", "org.freedesktop.UPower.Device")
@@ -197,6 +203,45 @@ def collect(root=Path("/sys/class/power_supply"), devices=None, now=None):
     return {"timestamp": now, "acOnline": online, "supplies": supplies, "batteries": batteries}
 
 
+class Reader:
+    """Cache D-Bus fallback metadata; kernel measurements remain five-second reads."""
+    def __init__(self, root, use_upower=True):
+        self.root, self.use_upower = root, use_upower
+        self.devices, self.signature, self.refreshed = [], None, None
+
+    def sample(self):
+        sample = collect(self.root, self.devices)
+        signature = (sample["acOnline"], tuple((b["id"], b["status"]) for b in sample["batteries"]))
+        now = time.monotonic()
+        # Keep querying fallback measurements at the sampling rate on hardware
+        # without complete kernel telemetry. Cache only the supplementary data.
+        complete = bool(sample["batteries"]) and all(
+            (self.root / b["id"] / "status").is_file()
+            and (self.root / b["id"] / "voltage_now").is_file()
+            and any((self.root / b["id"] / field).is_file() for field in ("current_now", "power_now"))
+            for b in sample["batteries"])
+        if self.use_upower and (not complete or self.refreshed is None or now - self.refreshed >= 30 or signature != self.signature):
+            self.devices = upower_devices(include_lines=not bool(sample["supplies"]))
+            self.refreshed = now
+            sample = collect(self.root, self.devices)
+            signature = (sample["acOnline"], tuple((b["id"], b["status"]) for b in sample["batteries"]))
+        self.signature = signature
+        return sample
+
+
+def compact(sample):
+    batteries = []
+    for battery in sample["batteries"]:
+        values = {key: number(battery[key]) for key in HISTORY_FIELDS[2:] if key in battery}
+        values["id"] = battery["id"]
+        status = battery.get("status")
+        values["status"] = status if isinstance(status, str) else "Unknown"
+        batteries.append(values)
+    online = sample.get("acOnline")
+    return {"timestamp": sample["timestamp"], "acOnline": online if isinstance(online, bool) else None,
+            "batteries": batteries}
+
+
 def load_history(path):
     try:
         if path.stat().st_size > 8 * 1024 * 1024:
@@ -208,26 +253,26 @@ def load_history(path):
                 and isinstance(value.get("history"), list)
                 and isinstance(value.get("events"), list)):
             return value
-    except (OSError, ValueError):
+    except (OSError, ValueError, UnicodeError, RecursionError):
         pass
     return {}
 
 
 def with_history(sample, previous):
     now = sample["timestamp"]
-    history = [s for s in previous.get("history", []) if isinstance(s, dict)
+    history = [compact(s) for s in previous.get("history", [])[-MAX_SAMPLES:] if isinstance(s, dict)
                and isinstance(s.get("timestamp"), (float, int))
                and isinstance(s.get("batteries"), list)
                and all(isinstance(b, dict) and isinstance(b.get("id"), str) for b in s["batteries"])
                and now - WINDOW_SECONDS <= s["timestamp"] <= now]
-    events = [e for e in previous.get("events", []) if isinstance(e, dict)
+    events = [e for e in previous.get("events", [])[-MAX_EVENTS:] if isinstance(e, dict)
               and isinstance(e.get("timestamp"), (float, int))
               and isinstance(e.get("label"), str) and isinstance(e.get("kind"), str)
               and now - WINDOW_SECONDS <= e["timestamp"] <= now]
     last = history[-1] if history else None
     # Multiple bar instances/reloads must not duplicate the same sample.
     if last and now - last["timestamp"] < 2:
-        return dict(previous, **sample)
+        return dict(sample, schemaVersion=1, history=history[-MAX_SAMPLES:], events=events[-MAX_EVENTS:])
     if last and now - last["timestamp"] <= 30:
         if sample["acOnline"] is not None and last.get("acOnline") is not None and sample["acOnline"] != last["acOnline"]:
             events.append({"timestamp": now, "kind": "ac", "label": "External power connected" if sample["acOnline"] else "External power disconnected"})
@@ -242,28 +287,66 @@ def with_history(sample, previous):
             events.append({"timestamp": now, "kind": "battery", "label": key + ": battery removed"})
     elif last:
         events.append({"timestamp": now, "kind": "gap", "label": "Monitoring resumed; readings unavailable during the gap"})
-    history.append(sample)
+    history.append(compact(sample))
     return dict(sample, schemaVersion=1, history=history[-MAX_SAMPLES:], events=events[-MAX_EVENTS:])
 
 
-def record(sample, state_file):
+def record(sample, state_file, previous=None):
     """Lock the shared history across monitors; replace atomically, mode 0600."""
     try:
         state_file.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         with (state_file.parent / ".history.lock").open("a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
-            payload = with_history(sample, load_history(state_file))
+            payload = with_history(sample, previous if previous is not None else load_history(state_file))
             fd, temp = tempfile.mkstemp(prefix=".history-", dir=state_file.parent)
             try:
                 with os.fdopen(fd, "w") as out:
                     json.dump(payload, out, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
                     out.write("\n")
+                    out.flush()
+                    os.fsync(out.fileno())
                 os.replace(temp, state_file)
             finally:
                 Path(temp).unlink(missing_ok=True)
             return payload
     except OSError as exc:
         return dict(sample, history=[sample], events=[], storageError=str(exc))
+
+
+class History:
+    """Keep samples in memory; checkpoint once a minute and immediately on events."""
+    def __init__(self, path=None):
+        self.path = path
+        self.payload = load_history(path) if path else {}
+        self.saved_at = None
+        self.error = ""
+        self.dirty = False
+
+    def update(self, sample, monotonic=None):
+        now = time.monotonic() if monotonic is None else monotonic
+        old_events = self.payload.get("events", [])
+        self.payload = with_history(sample, self.payload)
+        self.dirty = True
+        changed = self.payload["events"] != old_events
+        if self.path and (self.saved_at is None or now - self.saved_at >= SAVE_INTERVAL or changed):
+            self.flush()
+            self.saved_at = now
+        if self.error:
+            self.payload["storageError"] = self.error
+        return self.payload
+
+    def flush(self):
+        if not self.path or not self.dirty or "timestamp" not in self.payload:
+            return
+        self.payload.pop("storageError", None)
+        result = record(self.payload, self.path, self.payload)
+        if "storageError" in result:
+            self.error = result["storageError"]
+            self.payload["storageError"] = self.error
+        else:
+            self.error = ""
+            self.dirty = False
+            self.payload.pop("storageError", None)
 
 
 def main():
@@ -276,17 +359,24 @@ def main():
     args = parser.parse_args()
     if not math.isfinite(args.interval) or args.interval < 2:
         parser.error("interval must be at least 2 seconds")
-    while True:
-        start = time.monotonic()
-        sample = collect(args.sysfs, devices=[] if args.no_upower else None)
-        payload = record(sample, args.state_file) if args.state_file else dict(sample, history=[sample], events=[])
-        try:
-            print(json.dumps(payload, ensure_ascii=False, allow_nan=False, separators=(",", ":")), flush=True)
-        except BrokenPipeError:
-            break
-        if not args.watch:
-            break
-        time.sleep(max(0.1, args.interval - (time.monotonic() - start)))
+    reader = Reader(args.sysfs, use_upower=not args.no_upower)
+    history = History(args.state_file)
+    def stop(signum, frame):
+        raise SystemExit(0)
+    signal.signal(signal.SIGTERM, stop)
+    try:
+        while True:
+            start = time.monotonic()
+            payload = history.update(reader.sample())
+            try:
+                print(json.dumps(payload, ensure_ascii=False, allow_nan=False, separators=(",", ":")), flush=True)
+            except BrokenPipeError:
+                break
+            if not args.watch:
+                break
+            time.sleep(max(0.1, args.interval - (time.monotonic() - start)))
+    finally:
+        history.flush()
 
 
 if __name__ == "__main__":

@@ -10,10 +10,10 @@ function batteryIn(sample, id) {
   return null
 }
 
-function recent(history, sample, battery) {
+function recent(history, sample, battery, endIndex) {
   var out = []
   var previous = sample.timestamp
-  for (var i = history.length - 1; i >= 0; i--) {
+  for (var i = endIndex === undefined ? history.length - 1 : endIndex; i >= 0; i--) {
     var point = history[i]
     if (point.timestamp > sample.timestamp) continue
     if (sample.timestamp - point.timestamp > 15 || previous - point.timestamp > 12) break
@@ -43,9 +43,9 @@ function flow(battery) {
   return null
 }
 
-function classify(sample, battery, history) {
+function classify(sample, battery, history, endIndex) {
   if (!battery) return { code: "missing", label: "No battery detected", reason: "No system battery readings are available." }
-  var points = recent(history || [], sample, battery)
+  var points = recent(history || [], sample, battery, endIndex)
   var settled = points.length >= 3 && points[points.length - 1].timestamp - points[0].timestamp >= 10
   var rate = average(points, "powerW"), current = average(points, "currentA")
   var active = flow(battery)
@@ -128,7 +128,7 @@ function view(payload, id, now) {
       var point = history[i]
       var b = batteryIn(point, battery.id)
       if (!b || previous - point.timestamp > 15 || point.acOnline !== payload.acOnline) break
-      if (classify(point, b, history).code !== result.code) break
+      if (classify(point, b, history, i).code !== result.code) break
       result.since = point.timestamp
       previous = point.timestamp
     }

@@ -19,8 +19,6 @@ Panel {
   property string selectedBatteryId: ""
   readonly property var telemetry: Local.PowerStore.snapshot
   readonly property var diagnosis: Diagnostics.view(telemetry, selectedBatteryId, Local.PowerStore.now)
-  property var batteryInfo: ({})
-  property var systemInfo: ({})
   property var profiles: []
   property string activeProfile: ""
   property int profileIndex: 0
@@ -49,6 +47,11 @@ Panel {
     profileIndex = Model.selectProfileIndex(profileIndex, delta, profiles)
   }
 
+  function revealProfiles() {
+    var bottom = profileRow.mapToItem(column, 0, 0).y + profileRow.height
+    contentFlick.contentY = Math.max(0, Math.min(contentFlick.contentHeight - contentFlick.height, bottom - contentFlick.height))
+  }
+
   function activateSelectedProfile() {
     if (profileIndex < 0 || profileIndex >= profiles.length) return
     setProfile(profiles[profileIndex])
@@ -66,27 +69,13 @@ Panel {
     return Model.batteryIcon(device, root.discharging, upowerStates())
   }
 
-  function modeLabel() {
-    var device = UPower.displayDevice
-    return Model.modeLabel(device, root.discharging, upowerStates())
-  }
-
   function profileIcon(name) {
     return Model.profileIcon(name)
   }
 
-  readonly property bool fullyCharged: {
-    return diagnosis.code === "full"
-  }
   readonly property bool discharging: {
     return telemetry.timestamp ? diagnosis.code === "discharging" || telemetry.acOnline === false : UPower.onBattery
   }
-  readonly property bool chargeThresholdActive: {
-    return diagnosis.code === "limit"
-  }
-  readonly property bool batteryFull: fullyCharged || (!root.discharging && batteryFraction >= 1)
-  readonly property bool batteryFlowIdle: batteryFull || chargeThresholdActive
-
   // 0..1 charge level, used by the visual progress bar.
   readonly property real batteryFraction: {
     if (telemetry.timestamp) return diagnosis.battery && Diagnostics.known(diagnosis.battery.percentage) ? diagnosis.battery.percentage / 100 : 0
@@ -105,60 +94,12 @@ Panel {
     return root.bar ? root.contentForeground : Color.foreground
   }
 
-  // Cute agent-flavored phrases shown in the hero status line, rotated on a
-  // timer so the panel feels alive when current is flowing (either direction).
-  readonly property var chargingPhrases: [
-    "Pumping power",
-    "Injecting electrons",
-    "Pouring juice",
-    "Amassing watts",
-    "Hoarding joules",
-    "Sucking volts",
-    "Topping reserves",
-    "Soaking amps",
-    "Inhaling kilowatts"
-  ]
-  readonly property var onBatteryPhrases: [
-    "Slurping power",
-    "Spending joules",
-    "Draining watts",
-    "Burning electrons",
-    "Sipping juice",
-    "Spending coulombs",
-    "Bleeding amps",
-    "Guzzling volts",
-    "Munching reserves"
-  ]
-  property int phraseIndex: 0
-
-  // Whichever list is "active" given the current power state.
-  readonly property var activePhrases: {
-    if (fullyCharged) return []
-    if (charging) return chargingPhrases
-    if (discharging) return onBatteryPhrases
-    return []
-  }
-  readonly property bool rotatingPhrases: false // Diagnostics own the status text; keep upstream animation dormant.
-
-  readonly property string heroStatusText: {
-    return diagnosis.label
-  }
+  readonly property string heroStatusText: diagnosis.label
 
   function refresh() {
     if (!batteryPresent) return
 
-    if (!batteryProc.running) batteryProc.running = true
     if (!profilesProc.running) profilesProc.running = true
-    if (!systemProc.running) systemProc.running = true
-  }
-
-  function updateKeyValue(raw, targetName) {
-    var next = Model.parseKeyValue(raw)
-    // Keep last known good data if a refresh briefly returns nothing — happens
-    // around AC plug/unplug events. Avoids the section collapsing mid-transition.
-    if (Object.keys(next).length === 0) return
-    if (targetName === "battery") batteryInfo = next
-    else systemInfo = next
   }
 
   function updateProfiles(raw) {
@@ -177,7 +118,7 @@ Panel {
 
   function setProfile(profile) {
     if (!profile || actionProc.running) return
-    actionProc.command = ["omarchy-powerprofiles-set", telemetry.acOnline === true ? "ac" : "battery", profile]
+    actionProc.command = ["omarchy-powerprofiles-set", (telemetry.acOnline === null || telemetry.acOnline === undefined ? !UPower.onBattery : telemetry.acOnline) ? "ac" : "battery", profile]
     actionProc.running = true
   }
 
@@ -196,6 +137,7 @@ Panel {
     function toggle() { root.toggle() }
     function togglePercentage() { root.togglePercentage() }
     function toggleHistory() { diagnosticDetails.historyOpen = !diagnosticDetails.historyOpen }
+    function toggleDetails() { diagnosticDetails.detailsOpen = !diagnosticDetails.detailsOpen }
     function status(): string { return JSON.stringify(root.diagnosis) }
   }
 
@@ -220,21 +162,9 @@ Panel {
   implicitHeight: batteryPresent ? button.implicitHeight : 0
 
   Process {
-    id: batteryProc
-    command: ["omarchy-battery-status", "--shell"]
-    stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.updateKeyValue(text, "battery") }
-  }
-
-  Process {
     id: profilesProc
     command: ["omarchy-powerprofiles-list", "--active-state"]
     stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.updateProfiles(text) }
-  }
-
-  Process {
-    id: systemProc
-    command: ["omarchy-system-stats"]
-    stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.updateKeyValue(text, "system") }
   }
 
   Process {
@@ -243,49 +173,6 @@ Panel {
   }
 
   Timer { interval: 5000; running: root.opened; repeat: true; onTriggered: root.refresh() }
-
-  // Rotate the status phrase while the panel is open and we're in a
-  // rotating state (charging or on battery). The text swap is wrapped in a
-  // fade so the changeover reads as one organism rather than a hard cut.
-  Timer {
-    id: phraseTimer
-    interval: 2800
-    running: root.opened && root.rotatingPhrases
-    repeat: true
-    triggeredOnStart: false
-    onTriggered: phraseSwap.restart()
-  }
-
-  SequentialAnimation {
-    id: phraseSwap
-    PropertyAnimation {
-      target: heroStatus; property: "opacity"
-      to: 0.0; duration: 180; easing.type: Easing.OutQuad
-    }
-    ScriptAction {
-      script: {
-        var n = root.activePhrases.length
-        if (n > 0) root.phraseIndex = (root.phraseIndex + 1) % n
-      }
-    }
-    PropertyAnimation {
-      target: heroStatus; property: "opacity"
-      to: 1.0; duration: 260; easing.type: Easing.InQuad
-    }
-  }
-
-  // If we leave a rotating state mid-swap, halt the animation and snap back
-  // to full opacity so "FULLY CHARGED" is legible immediately rather than
-  // appearing dimmed.
-  Connections {
-    target: root
-    function onRotatingPhrasesChanged() {
-      if (!root.rotatingPhrases) {
-        phraseSwap.stop()
-        heroStatus.opacity = 1.0
-      }
-    }
-  }
 
   BarIconButton {
     id: button
@@ -310,28 +197,34 @@ Panel {
     bar: root.bar
     open: root.opened && root.batteryPresent
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(440))
+    contentWidth: panel.fittedContentWidth(Style.space(380))
     contentHeight: panel.fittedContentHeight(column.implicitHeight)
 
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
       onMoveRequested: function(dx, dy) {
-        if (!root.cursorActive) { root.cursorActive = true; return }
+        if (!root.cursorActive) { root.cursorActive = true; Qt.callLater(root.revealProfiles); return }
         if (dx !== 0) root.selectProfileByDelta(dx)
         else if (dy !== 0) root.selectProfileByDelta(dy)
+        Qt.callLater(root.revealProfiles)
       }
       onActivateRequested: if (root.cursorActive) root.activateSelectedProfile()
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
-      onTextKey: function(t) { if (t === "g") diagnosticDetails.historyOpen = !diagnosticDetails.historyOpen }
+      onTextKey: function(t) {
+        if (t === "g") diagnosticDetails.historyOpen = !diagnosticDetails.historyOpen
+        else if (t === "d") diagnosticDetails.detailsOpen = !diagnosticDetails.detailsOpen
+      }
 
       Flickable {
+        id: contentFlick
         anchors.fill: parent
         contentHeight: column.implicitHeight
         clip: true
         boundsBehavior: Flickable.StopAtBounds
         flickableDirection: Flickable.VerticalFlick
+        onContentHeightChanged: returnToBounds()
 
       Column {
         id: column
@@ -431,7 +324,7 @@ Panel {
 
             // Subtle pulse while charging — visible signal that energy is flowing in.
             SequentialAnimation on opacity {
-              running: root.charging && !root.fullyCharged && root.opened
+              running: root.charging && root.opened
               loops: Animation.Infinite
               alwaysRunToEnd: true
               NumberAnimation { from: 1.0; to: 0.55; duration: 950; easing.type: Easing.InOutSine }
@@ -446,6 +339,7 @@ Panel {
           snapshot: root.telemetry
           reading: root.diagnosis
           now: Local.PowerStore.now
+          active: root.opened
           error: Local.PowerStore.error
           foreground: root.contentForeground
           fontFamily: root.contentFontFamily
@@ -509,30 +403,4 @@ Panel {
     }
   }
 
-  component InfoPair: Row {
-    property string label: ""
-    property string value: ""
-
-    width: parent.width
-    spacing: Style.space(8)
-
-    InfoLabel { text: label }
-    Item { width: Math.max(0, parent.width - parent.children[0].implicitWidth - parent.children[2].implicitWidth - parent.spacing * 2); height: 1 }
-    InfoValue { text: value }
-  }
-
-  component InfoLabel: Text {
-    textFormat: Text.PlainText
-    color: root.contentForeground
-    opacity: 0.6
-    font.family: root.contentFontFamily
-    font.pixelSize: Style.font.bodySmall
-  }
-
-  component InfoValue: Text {
-    textFormat: Text.PlainText
-    color: root.contentForeground
-    font.family: root.contentFontFamily
-    font.pixelSize: Style.font.bodySmall
-  }
 }

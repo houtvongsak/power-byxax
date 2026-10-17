@@ -16,7 +16,7 @@ ShellRoot {
   }
   FloatingWindow {
     visible: true
-    implicitWidth: 520
+    implicitWidth: Number(Quickshell.env("POWER_PREVIEW_WIDTH")) || 420
     implicitHeight: contents.implicitHeight + 64
     color: Color.popups.background
     Rectangle {
@@ -54,6 +54,7 @@ ShellRoot {
           reading: root.reading
           now: root.fixture.timestamp || 0
           historyOpen: Quickshell.env("POWER_PREVIEW_HISTORY") === "1"
+          detailsOpen: Quickshell.env("POWER_PREVIEW_DETAILS") === "1"
         }
         Text {
           text: Quickshell.env("POWER_PREVIEW_CAPTION") || "SIMULATED READINGS · LAYOUT PREVIEW"

@@ -22,9 +22,9 @@ based on the readings your laptop actually provides.
 
 - Current, voltage, and power update every **5 seconds**, with up to **15 seconds of averaging** within the same battery state. Small currents use **mA**.
 - Select individual batteries on laptops with multiple packs. Battery names are discovered automatically.
-- See the configured charge limit, estimated remaining time, health, full/design capacity, reported cycles, and temperature where available.
+- Keep the default view compact. Press **d** for the charge limit, health, full/design capacity, reported cycles, temperature, and data-source details.
 - Press **g** or click **Show history** for current/voltage graphs and recent connection/state changes.
-- History covers the last **30 minutes**, survives shell reloads, and marks observation gaps.
+- History covers the last **30 minutes**, survives shell reloads, and marks observation gaps. Graphs are created only while open.
 - Several observed AC changes within two minutes show a **Power connection unstable** notice. This does not diagnose a cable, jack, or charger fault.
 
 <details>
@@ -59,6 +59,11 @@ omarchy plugin remove io.github.houtvongsak.power-byxax  # restores the stock wi
 
 Monitoring runs while the widget is loaded, including when its popup is closed.
 It does not install a system service. Nothing is sent online by the collector.
+Samples stay in memory; compact history is checkpointed once a minute, immediately
+on recorded events, and on normal shutdown. An abrupt crash can lose up to the
+latest minute. Supplementary UPower data is cached for 30 seconds on hardware
+with complete kernel readings; fallback measurements and connection/state changes
+trigger fresh queries.
 The bounded history file is private to your user:
 
 ```text
@@ -107,7 +112,9 @@ bin/preview /tmp/power-snapshot.json /tmp/power-preview.png --history
 
 GitHub Actions checks every push/PR. A separate job checks official Omarchy
 releases every Monday at **04:00 UTC**. It updates `upstream`, merges into `main`,
-runs the checks, and publishes a patch release only if those checks pass. Conflicts
+runs the checks in a read-only job, and passes validated Git objects to a separate
+publisher. The publisher checks the exact commits and repository state without
+checking out or executing candidate code, then publishes a patch release. Conflicts
 or failures open a GitHub issue with the workflow link; this workflow does not
 create update PRs. GitHub's repository watch/notification settings control whether
 you receive notifications for issues and releases. Updates reach installed users
@@ -116,7 +123,8 @@ through `omarchy plugin update`.
 The initial baseline is [Omarchy v4.0.4](https://github.com/basecamp/omarchy/tree/v4.0.4/shell/plugins/panels/power),
 commit `c668141e9c42b13c80c9ca4ea108e11708c5e8a5`. The `upstream` branch holds
 the stock plugin and original license; `main` adds this plugin's identity,
-telemetry, diagnostics, and UI. See [MAINTAINING.md](MAINTAINING.md).
+telemetry, diagnostics, and UI. Upstream changes to this repository’s automation
+or tests require manual review. See [MAINTAINING.md](MAINTAINING.md).
 
 ## License
 
