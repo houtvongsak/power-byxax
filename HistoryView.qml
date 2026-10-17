@@ -10,7 +10,13 @@ Column {
   property var battery: ({})
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
+  readonly property var recentEvents: (reading.events || []).slice(0, 8)
+  readonly property string singleBatteryId: (snapshot.batteries || []).length === 1 ? snapshot.batteries[0].id : ""
   spacing: Style.space(10)
+
+  Column {
+    width: parent.width
+    spacing: Style.spacing.labelGap
     TrendGraph {
       width: parent.width
       title: "Battery current"
@@ -19,6 +25,21 @@ Column {
       foreground: root.foreground
       points: Diagnostics.series(root.snapshot.history, root.battery.id, "currentA")
     }
+    Text {
+      width: parent.width
+      text: "+ Charging · − Discharging · Gaps: unknown"
+      wrapMode: Text.WordWrap
+      textFormat: Text.PlainText
+      color: root.foreground
+      opacity: 0.6
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+    }
+  }
+
+  Column {
+    width: parent.width
+    spacing: Style.spacing.labelGap
     TrendGraph {
       width: parent.width
       title: "Battery voltage"
@@ -26,21 +47,12 @@ Column {
       foreground: root.foreground
       points: Diagnostics.series(root.snapshot.history, root.battery.id, "voltageV")
     }
-    Text {
-      width: parent.width
-      text: "Positive current: charging. Negative: draining. Unknown flow directions leave gaps."
-      wrapMode: Text.WordWrap
-      color: root.foreground
-      opacity: 0.6
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.caption
-    }
     Item {
       width: parent.width
       implicitHeight: timeStart.implicitHeight
       Text {
         id: timeStart
-        text: "30 minutes ago"
+        text: "−30m"
         color: root.foreground
         opacity: 0.6
         font.family: root.fontFamily
@@ -59,33 +71,65 @@ Column {
       width: parent.width
       text: Diagnostics.voltageTrend(root.snapshot.history, root.battery.id)
       wrapMode: Text.WordWrap
+      textFormat: Text.PlainText
       color: root.foreground
       opacity: 0.6
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
     }
+  }
+
+  Column {
+    width: parent.width
+    spacing: Style.spacing.controlGap
     PanelSectionHeader { text: "RECENT EVENTS"; foreground: root.foreground; fontFamily: root.fontFamily }
     Text {
-      visible: !(root.reading.events || []).length
+      visible: !root.recentEvents.length
       width: parent.width
-      text: "No connection or battery-state changes recorded yet."
-      wrapMode: Text.WordWrap
+      text: "No recent changes."
       color: root.foreground
       opacity: 0.6
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
     }
-    Repeater {
-      model: (root.reading.events || []).slice(0, 8)
-      Text {
-        required property var modelData
-        width: root.width
-        text: Qt.formatDateTime(new Date(modelData.timestamp * 1000), "HH:mm:ss") + "  " + modelData.label
-        wrapMode: Text.WordWrap
-        textFormat: Text.PlainText
-        color: root.foreground
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.bodySmall
+    FontMetrics {
+      id: eventFont
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
+    }
+    Column {
+      visible: root.recentEvents.length > 0
+      width: parent.width
+      spacing: Style.spacing.labelGap
+      Repeater {
+        model: root.recentEvents
+        Item {
+          required property var modelData
+          width: parent.width
+          implicitHeight: Math.max(eventTime.implicitHeight, eventText.implicitHeight)
+          Text {
+            id: eventTime
+            width: Math.ceil(eventFont.advanceWidth("00:00:00"))
+            text: Qt.formatDateTime(new Date(modelData.timestamp * 1000), "HH:mm:ss")
+            color: root.foreground
+            opacity: 0.6
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+          }
+          Text {
+            id: eventText
+            anchors.left: eventTime.right
+            anchors.leftMargin: Style.spacing.controlGap
+            anchors.right: parent.right
+            text: Diagnostics.eventLabel(modelData, root.singleBatteryId)
+            wrapMode: Text.WordWrap
+            textFormat: Text.PlainText
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+          }
+        }
       }
     }
+  }
 }

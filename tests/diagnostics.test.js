@@ -131,10 +131,10 @@ test('unknown graph direction is a gap, not an invented charge/discharge line', 
   assert.equal(d.series([sample({currentA: null})], 'BAT1', 'currentA')[0].value, null);
 });
 test('voltage trend requires a minute of evidence and never diagnoses recovery', () => {
-  assert.equal(d.voltageTrend([sample()], 'BAT1'), 'Collecting voltage history');
+  assert.equal(d.voltageTrend([sample()], 'BAT1'), 'Collecting trend…');
   const history = Array.from({length: 13}, (_, i) => sample({voltageV: 14 + i / 12}, {timestamp: 40 + i * 5}));
-  assert.match(d.voltageTrend(history, 'BAT1'), /rising.*cause unknown/);
-  assert.equal(d.voltageTrend([history[0], history[12]], 'BAT1'), 'Collecting voltage history');
+  assert.equal(d.voltageTrend(history, 'BAT1'), 'Rising · last 1m');
+  assert.equal(d.voltageTrend([history[0], history[12]], 'BAT1'), 'Collecting trend…');
 });
 test('null and zero stay distinct in formatting', () => {
   assert.equal(d.metric(null, 'A'), 'Unavailable');

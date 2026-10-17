@@ -158,9 +158,9 @@ function series(history, id, field) {
 
 function voltageTrend(history, id) {
   var points = series(history, id, "voltageV")
-  if (points.length < 2) return "Collecting voltage history"
+  if (points.length < 2) return "Collecting trend…"
   var last = points[points.length - 1]
-  if (!known(last.value)) return "Voltage sensor unavailable"
+  if (!known(last.value)) return "Trend unavailable"
   var first = null
   var previous = last
   for (var i = points.length - 2; i >= 0; i--) {
@@ -168,12 +168,34 @@ function voltageTrend(history, id) {
     if (last.timestamp - points[i].timestamp >= 60) { first = points[i]; break }
     previous = points[i]
   }
-  if (!first) return "Collecting voltage history"
+  if (!first) return "Collecting trend…"
   var delta = last.value - first.value
-  return "Voltage " + (Math.abs(delta) < 0.08 ? "roughly steady" : delta > 0 ? "rising" : "falling") + " over the last minute; cause unknown"
+  return (Math.abs(delta) < 0.08 ? "Steady" : delta > 0 ? "Rising" : "Falling") + " · last 1m"
+}
+
+// Format existing history without changing the recorded event or its meaning.
+// Keep battery IDs when several packs are present or an event concerns another pack.
+function eventLabel(event, singleBatteryId) {
+  var label = String(event && event.label || "")
+  var kind = event && event.kind
+  if (kind === "ac") {
+    if (label === "External power connected") return "Plugged in"
+    if (label === "External power disconnected") return "Unplugged"
+  }
+  if (kind === "gap") return "Monitoring resumed"
+  var parts = kind === "state" || kind === "battery" ? /^([^:]+):\s*(.*)$/.exec(label) : null
+  if (!parts) return label
+  var words = {
+    "Unknown": "State unknown",
+    "Pending discharge": "Discharge pending",
+    "battery detected": "Battery detected",
+    "battery removed": "Battery unavailable"
+  }
+  var text = Object.prototype.hasOwnProperty.call(words, parts[2]) ? words[parts[2]] : parts[2]
+  return (parts[1] === singleBatteryId ? "" : parts[1] + " · ") + text
 }
 
 if (typeof module !== "undefined") module.exports = {
   known: known, batteryIn: batteryIn, classify: classify, view: view,
-  duration: duration, metric: metric, amps: amps, series: series, voltageTrend: voltageTrend
+  duration: duration, metric: metric, amps: amps, series: series, voltageTrend: voltageTrend, eventLabel: eventLabel
 }
