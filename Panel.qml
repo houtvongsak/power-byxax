@@ -94,7 +94,44 @@ Panel {
     return root.bar ? root.contentForeground : Color.foreground
   }
 
-  readonly property string heroStatusText: diagnosis.label
+  // Cute agent-flavored phrases shown in the hero status line, rotated on a
+  // timer so the panel feels alive when current is flowing (either direction).
+  readonly property var chargingPhrases: [
+    "Pumping power",
+    "Injecting electrons",
+    "Pouring juice",
+    "Amassing watts",
+    "Hoarding joules",
+    "Sucking volts",
+    "Topping reserves",
+    "Soaking amps",
+    "Inhaling kilowatts"
+  ]
+  readonly property var onBatteryPhrases: [
+    "Slurping power",
+    "Spending joules",
+    "Draining watts",
+    "Burning electrons",
+    "Sipping juice",
+    "Spending coulombs",
+    "Bleeding amps",
+    "Guzzling volts",
+    "Munching reserves"
+  ]
+  property int phraseIndex: 0
+
+  // Whichever list is "active" given the current power state.
+  readonly property var activePhrases: {
+    if (diagnosis.code === "charging") return chargingPhrases
+    if (diagnosis.code === "discharging" && telemetry.acOnline !== true) return onBatteryPhrases
+    return []
+  }
+  readonly property bool rotatingPhrases: activePhrases.length > 0
+
+  readonly property string heroStatusText: {
+    if (rotatingPhrases) return activePhrases[phraseIndex % activePhrases.length]
+    return diagnosis.label
+  }
 
   function refresh() {
     if (!batteryPresent) return
@@ -156,6 +193,8 @@ Panel {
       diagnosticDetails.detailsOpen = false
       diagnosticDetails.historyOpen = false
       contentFlick.contentY = 0
+      phraseSwap.stop()
+      heroStatus.opacity = 1.0
     }
   }
 
@@ -177,6 +216,49 @@ Panel {
   }
 
   Timer { interval: 5000; running: root.opened; repeat: true; onTriggered: root.refresh() }
+
+  // Rotate the status phrase while the panel is open and we're in a
+  // rotating state (charging or on battery). The text swap is wrapped in a
+  // fade so the changeover reads as one organism rather than a hard cut.
+  Timer {
+    id: phraseTimer
+    interval: 2800
+    running: root.opened && root.rotatingPhrases
+    repeat: true
+    triggeredOnStart: false
+    onTriggered: phraseSwap.restart()
+  }
+
+  SequentialAnimation {
+    id: phraseSwap
+    PropertyAnimation {
+      target: heroStatus; property: "opacity"
+      to: 0.0; duration: 180; easing.type: Easing.OutQuad
+    }
+    ScriptAction {
+      script: {
+        var n = root.activePhrases.length
+        if (n > 0) root.phraseIndex = (root.phraseIndex + 1) % n
+      }
+    }
+    PropertyAnimation {
+      target: heroStatus; property: "opacity"
+      to: 1.0; duration: 260; easing.type: Easing.InQuad
+    }
+  }
+
+  // If we leave a rotating state mid-swap, halt the animation and snap back
+  // to full opacity so "FULLY CHARGED" is legible immediately rather than
+  // appearing dimmed.
+  Connections {
+    target: root
+    function onRotatingPhrasesChanged() {
+      if (!root.rotatingPhrases) {
+        phraseSwap.stop()
+        heroStatus.opacity = 1.0
+      }
+    }
+  }
 
   BarIconButton {
     id: button

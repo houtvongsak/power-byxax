@@ -1,68 +1,57 @@
 import QtQuick
 import Quickshell
-import Quickshell.Io
 import qs.Commons
+import qs.Ui
 import "./plugin" as Battery
-import "./plugin/Diagnostics.js" as Diagnostics
 
-// Isolated artifact renderer: never screenshots the user's desktop.
+// Render the real popup layout with fixture telemetry, without a desktop capture.
 ShellRoot {
-  id: root
-  property var fixture: ({})
-  readonly property var reading: Diagnostics.view(fixture, "", fixture.timestamp || 0)
-  FileView {
-    path: Quickshell.env("POWER_PREVIEW_FIXTURE")
-    onLoaded: root.fixture = JSON.parse(text())
-  }
+  Battery.Panel { id: power }
   FloatingWindow {
     visible: true
-    implicitWidth: Number(Quickshell.env("POWER_PREVIEW_WIDTH")) || 420
-    implicitHeight: contents.implicitHeight + 64
+    implicitWidth: Number(Quickshell.env("POWER_PREVIEW_WIDTH")) || Style.space(380)
+    implicitHeight: capture.height
     color: Color.popups.background
     Rectangle {
       id: capture
       width: parent.width
-      height: contents.implicitHeight + 64
-      color: Color.background
-      Column {
-        id: contents
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.margins: 32
-        spacing: 16
-        Text {
-          width: parent.width
-          text: "Battery" + (root.reading.battery ? " · " + Math.round(root.reading.battery.percentage) + "%" : "")
-          color: Color.foreground
-          font.family: Style.font.family
-          font.pixelSize: Style.font.title
-          font.bold: true
+      height: card.height + caption.implicitHeight + Style.space(16)
+      color: Color.popups.background
+      BorderSurface {
+        id: card
+        width: parent.width
+        height: contentHost.height + contentTopInset + contentBottomInset
+        color: Color.popups.background
+        borderSpec: Border.surfaceSpec("popups", "border", Color.popups.border, Math.max(1, Style.space(2)))
+        padding: Style.spacing.popupPadding
+        radius: Style.cornerRadius
+        Item {
+          id: contentHost
+          x: card.contentLeftInset
+          y: card.contentTopInset
+          width: card.width - card.contentLeftInset - card.contentRightInset
+          height: power.previewContent.implicitHeight
         }
-        Text {
-          width: parent.width
-          text: root.reading.label
-          wrapMode: Text.WordWrap
-          color: Color.foreground
-          font.family: Style.font.family
-          font.pixelSize: Style.font.body
-          font.bold: true
-        }
-        Battery.BatteryDetails {
-          width: parent.width
-          snapshot: root.fixture
-          reading: root.reading
-          now: root.fixture.timestamp || 0
-          historyOpen: Quickshell.env("POWER_PREVIEW_HISTORY") === "1"
-          detailsOpen: Quickshell.env("POWER_PREVIEW_DETAILS") === "1"
-        }
-        Text {
-          text: Quickshell.env("POWER_PREVIEW_CAPTION") || "SIMULATED READINGS · LAYOUT PREVIEW"
-          color: Color.foreground
-          opacity: 0.4
-          font.family: Style.font.family
-          font.pixelSize: Style.font.caption
-        }
+      }
+      Text {
+        id: caption
+        anchors.top: card.bottom
+        anchors.topMargin: Style.space(8)
+        anchors.horizontalCenter: parent.horizontalCenter
+        text: Quickshell.env("POWER_PREVIEW_CAPTION") || "SIMULATED READINGS · LAYOUT PREVIEW"
+        color: Color.foreground
+        opacity: 0.4
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+      Component.onCompleted: {
+        power.previewContent.parent = contentHost
+        power.previewDetails.active = true
+        power.previewDetails.historyOpen = Quickshell.env("POWER_PREVIEW_HISTORY") === "1"
+        power.previewDetails.detailsOpen = Quickshell.env("POWER_PREVIEW_DETAILS") === "1"
+        power.profiles = ["power-saver", "balanced", "performance"]
+        power.activeProfile = "balanced"
+        power.phraseIndex = 1
       }
     }
     Timer {

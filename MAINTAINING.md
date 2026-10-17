@@ -90,8 +90,10 @@ CI requires QML parsing.
 `bin/smoke` starts a separate Quickshell config with the real panel and temporary
 state storage. It checks two successive live samples and verifies graph objects
 are created only while open, without opening its popup
-or changing the installed bar. `bin/preview` renders `BatteryDetails.qml` in an
-isolated window to a PNG; it does not capture desktop content.
+or changing the installed bar. `bin/preview` renders the actual popup content
+with fixture telemetry to a PNG. It substitutes an offscreen window host and
+adds temporary aliases in the preview copy; it does not change the installed
+panel, start a collector, or capture desktop content.
 
 ```sh
 python3 bin/telemetry.py > /tmp/power-snapshot.json
@@ -161,10 +163,14 @@ persistent Python collector. The added collector's roughly 20 MB resident cost
 is the remaining tradeoff for background history and sensor interpretation.
 No third-party Python or Node runtime packages were added.
 
-The audit also removed unused stock battery/system polling, dormant rotating
-phrases/animations, and unused statistics components. The popup uses the stock
-380-unit width; advanced details are collapsed and graphs are unloaded when the
-popup closes. Keyboard profile navigation scrolls the controls into view.
+Unused stock battery/system polling was removed. The compact popup keeps the
+stock 380-unit width, hero, two-column battery stats, power-profile controls and
+rotating phrases. Phrases rotate only while open in normal charging/discharging
+states; slow charging, draining on AC and conflicting readings keep explicit
+labels. Current, voltage and external power appear below the stock stats, with
+watts retained in the charging/discharging row. Advanced details collapse and
+graphs unload when the popup closes. Keyboard profile navigation scrolls the
+controls into view.
 
 Installed updates must be followed by `omarchy restart shell` on shells that
 retain QML/IPC caches. An isolated smoke test always uses a fresh engine and does

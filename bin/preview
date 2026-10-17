@@ -9,8 +9,60 @@ history=0
 cd "$(dirname "$0")/.."
 task_dir=$(mktemp -d -t power-byxax-preview.XXXXXX)
 trap 'rm -rf "$task_dir"' EXIT
-for dir in Commons Ui services; do ln -s "${OMARCHY_PATH:-/usr/share/omarchy}/shell/$dir" "$task_dir/$dir"; done
-ln -s "$PWD" "$task_dir/plugin"
+for dir in Commons services; do ln -s "${OMARCHY_PATH:-/usr/share/omarchy}/shell/$dir" "$task_dir/$dir"; done
+# Layer-shell windows require Wayland. Keep their real content and substitute
+# only the window host for the offscreen artifact renderer.
+mkdir "$task_dir/Ui"
+for file in "${OMARCHY_PATH:-/usr/share/omarchy}"/shell/Ui/*; do
+  [[ ${file##*/} == KeyboardPanel.qml ]] && continue
+  ln -s "$file" "$task_dir/Ui/${file##*/}"
+done
+cat > "$task_dir/Ui/KeyboardPanel.qml" <<'QML'
+import QtQuick
+Item {
+  property Item anchorItem
+  property QtObject bar
+  property var owner
+  property bool open: false
+  property Item focusTarget
+  property int contentWidth
+  property int contentHeight
+  width: contentWidth
+  height: contentHeight
+  function fittedContentWidth(value) { return value }
+  function fittedContentHeight(value) { return value }
+}
+QML
+mkdir "$task_dir/plugin"
+for file in ./*.qml ./*.js ./qmldir; do
+  case "$file" in ./Panel.qml | ./PowerStore.qml) continue ;; esac
+  ln -s "$PWD/${file#./}" "$task_dir/plugin/${file#./}"
+done
+# Render the actual popup content with fixture telemetry and no collector.
+# Preview-only aliases stay in the temporary copy, outside the installed API.
+python3 - "$task_dir/plugin/Panel.qml" <<'PY'
+from pathlib import Path
+import sys
+source = Path('Panel.qml').read_text()
+source = source.replace('  id: root\n', '  id: root\n  property alias previewContent: column\n  property alias previewDetails: diagnosticDetails\n', 1)
+Path(sys.argv[1]).write_text(source)
+PY
+cat > "$task_dir/plugin/PowerStore.qml" <<'QML'
+pragma Singleton
+import QtQuick
+import Quickshell
+import Quickshell.Io
+Item {
+  id: root
+  property var snapshot: ({})
+  property real now: snapshot.timestamp || 0
+  property string error: ""
+  FileView {
+    path: Quickshell.env("POWER_PREVIEW_FIXTURE")
+    onLoaded: root.snapshot = JSON.parse(text())
+  }
+}
+QML
 cp tests/render.qml "$task_dir/shell.qml"
 QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software POWER_PREVIEW_FIXTURE="$fixture" \
   POWER_PREVIEW_OUTPUT="$output" POWER_PREVIEW_HISTORY="$history" \

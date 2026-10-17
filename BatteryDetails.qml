@@ -15,6 +15,7 @@ Column {
   property bool detailsOpen: false
   property bool active: true
   readonly property var battery: reading.battery || ({})
+  readonly property bool fresh: !!snapshot.timestamp && reading.code !== "stale"
   signal batteryPicked(string batteryId)
   spacing: Style.space(10)
 
@@ -37,85 +38,73 @@ Column {
     }
   }
 
-  Text {
-    width: parent.width
-    text: root.reading.reason || "Waiting for readings…"
-    wrapMode: Text.WordWrap
-    textFormat: Text.PlainText
-    color: root.foreground
-    opacity: 0.75
-    font.family: root.fontFamily
-    font.pixelSize: Style.font.bodySmall
-  }
-  Text {
-    visible: root.reading.unstable === true
-    width: parent.width
-    text: "Power connection unstable · several connect/disconnect events were detected in two minutes. The cause is unknown."
-    wrapMode: Text.WordWrap
-    color: root.foreground
-    font.family: root.fontFamily
-    font.pixelSize: Style.font.bodySmall
-  }
-
+  // Stock two-column battery stats, followed by the extra sensor readings.
   Row {
     width: parent.width
-    spacing: Style.space(8)
-    Repeater {
-      model: [
-        { label: "CURRENT" + (root.battery.currentEstimated ? " ≈" : ""), value: Diagnostics.amps(root.reading.currentA) },
-        { label: "VOLTAGE", value: Diagnostics.metric(root.reading.voltageV, "V") },
-        { label: "POWER", value: Diagnostics.metric(root.reading.powerW, "W", 1) }
-      ]
-      Column {
-        required property var modelData
-        width: (root.width - Style.space(16)) / 3
-        spacing: Style.space(3)
-        Text {
-          text: modelData.label
-          color: root.foreground
-          opacity: 0.6
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-          font.letterSpacing: 1
-        }
-        Text {
-          width: parent.width
-          text: modelData.value
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.body
-          font.bold: true
-          color: root.foreground
-          elide: Text.ElideRight
-        }
+    spacing: Style.space(20)
+    Column {
+      width: (parent.width - parent.spacing) / 2
+      spacing: Style.spacing.labelGap
+      InfoPair { label: "Battery size"; value: Diagnostics.metric(root.battery.fullWh, "Wh", 0) }
+      InfoPair { label: "Charge cycles"; value: Diagnostics.known(root.battery.cycles) ? String(root.battery.cycles) : "—" }
+    }
+    Column {
+      width: (parent.width - parent.spacing) / 2
+      spacing: Style.spacing.labelGap
+      InfoPair {
+        label: root.reading.code === "limit" ? "Charge limit" : root.reading.code === "discharging" ? "Time left" : "Time to full"
+        value: root.reading.code === "limit" ? root.battery.limitPercent + "%"
+          : !root.fresh ? "Unavailable"
+          : root.reading.code === "discharging" ? Diagnostics.duration(root.battery.timeToEmptyS)
+          : ["charging", "slow"].indexOf(root.reading.code) !== -1 ? Diagnostics.duration(root.battery.timeToFullS) : "—"
+      }
+      InfoPair {
+        label: root.reading.code === "discharging" ? "Discharging" : ["charging", "slow"].indexOf(root.reading.code) !== -1 ? "Charging" : "Power"
+        value: Diagnostics.metric(root.fresh ? root.reading.powerW : null, "W", 1)
       }
     }
   }
 
-  Detail { label: "External power"; value: root.snapshot.acOnline === true ? "Connected" : root.snapshot.acOnline === false ? "Disconnected" : "Unknown" }
-  Detail { label: "State observed for"; value: root.reading.code === "stale" ? "Unavailable" : Diagnostics.duration(root.now - root.reading.since) }
+  Row {
+    width: parent.width
+    spacing: Style.space(20)
+    Column {
+      width: (parent.width - parent.spacing) / 2
+      InfoPair { label: "Current" + (root.battery.currentEstimated ? " ≈" : ""); value: Diagnostics.amps(root.fresh ? root.reading.currentA : null) }
+    }
+    Column {
+      width: (parent.width - parent.spacing) / 2
+      InfoPair { label: "Voltage"; value: Diagnostics.metric(root.fresh ? root.reading.voltageV : null, "V") }
+    }
+  }
   Detail {
-    visible: root.detailsOpen || Diagnostics.known(root.battery.limitPercent) && root.battery.limitPercent < 100
+    label: "External power"
+    value: !root.fresh ? "Unavailable" : root.snapshot.acOnline === true ? "Connected" : root.snapshot.acOnline === false ? "Disconnected" : "Unknown"
+  }
+  Text {
+    visible: root.reading.unstable === true
+    width: parent.width
+    text: "Power connection unstable"
+    wrapMode: Text.WordWrap
+    color: root.foreground
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.bodySmall
+  }
+  Detail {
+    visible: root.reading.code !== "limit" && (root.detailsOpen || Diagnostics.known(root.battery.limitPercent) && root.battery.limitPercent < 100)
     label: "Charge limit"
     value: !Diagnostics.known(root.battery.limitPercent) ? "Unavailable"
       : root.battery.limitPercent === 100 ? "100% · No reduced limit"
       : root.battery.limitPercent + "%"
   }
-  Detail {
-    visible: ["charging", "slow", "discharging"].indexOf(root.reading.code) !== -1
-    label: root.reading.code === "discharging" ? "Time left · estimate" : "Time to full · estimate"
-    value: root.reading.code === "discharging" ? Diagnostics.duration(root.battery.timeToEmptyS)
-      : ["charging", "slow"].indexOf(root.reading.code) !== -1 ? Diagnostics.duration(root.battery.timeToFullS) : "Unavailable"
-  }
   Column {
     visible: root.detailsOpen
     width: parent.width
     spacing: root.spacing
-  Detail { label: "Battery health"; value: Diagnostics.metric(root.battery.healthPercent, "%", 0) }
-  Detail { label: "Battery size"; value: Diagnostics.metric(root.battery.fullWh, "Wh", 1) }
-  Detail { label: "Design capacity"; value: Diagnostics.metric(root.battery.designWh, "Wh", 1) }
-  Detail { label: "Cycles · reported"; value: Diagnostics.known(root.battery.cycles) ? String(root.battery.cycles) : "Unavailable" }
-  Detail { label: "Temperature"; value: Diagnostics.metric(root.battery.temperatureC, "°C", 1) }
-
+    Detail { label: "State observed for"; value: root.fresh ? Diagnostics.duration(root.now - root.reading.since) : "Unavailable" }
+    Detail { label: "Battery health"; value: Diagnostics.metric(root.battery.healthPercent, "%", 0) }
+    Detail { label: "Design capacity"; value: Diagnostics.metric(root.battery.designWh, "Wh", 1) }
+    Detail { label: "Temperature"; value: Diagnostics.metric(root.battery.temperatureC, "°C", 1) }
   }
 
   Row {
@@ -159,11 +148,11 @@ Column {
   }
 
   Text {
-    visible: root.detailsOpen || root.battery.currentEstimated === true || root.error !== "" || (root.battery.conflicts || []).length > 0
+    visible: root.detailsOpen || root.error !== "" || (root.battery.conflicts || []).length > 0
     width: parent.width
     text: (root.detailsOpen ? (root.battery.id || "Battery") + (root.battery.model ? " · " + root.battery.model : "")
       + "\n" + (root.battery.source || "Waiting for readings") + " · 5s sampling · up to 15s averages" : "")
-      + (root.battery.currentEstimated ? "\nCurrent estimated from power ÷ voltage." : "")
+      + (root.detailsOpen && root.battery.currentEstimated ? "\nCurrent estimated from power ÷ voltage." : "")
       + (root.battery.conflicts && root.battery.conflicts.length ? "\n" + root.battery.conflicts.join("\n") : "")
       + (root.error ? "\n" + root.error : "")
     wrapMode: Text.WordWrap
@@ -172,6 +161,33 @@ Column {
     opacity: 0.55
     font.family: root.fontFamily
     font.pixelSize: Style.font.caption
+  }
+
+  component InfoPair: Row {
+    property string label: ""
+    property string value: ""
+
+    width: parent.width
+    spacing: Style.space(8)
+
+    InfoLabel { text: label }
+    Item { width: Math.max(0, parent.width - parent.children[0].implicitWidth - parent.children[2].implicitWidth - parent.spacing * 2); height: 1 }
+    InfoValue { text: value }
+  }
+
+  component InfoLabel: Text {
+    textFormat: Text.PlainText
+    color: root.foreground
+    opacity: 0.6
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.bodySmall
+  }
+
+  component InfoValue: Text {
+    textFormat: Text.PlainText
+    color: root.foreground
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.bodySmall
   }
 
   component Detail: Item {

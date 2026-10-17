@@ -2,7 +2,7 @@
 
 A clearer replacement for Omarchy's power widget: charging states, live current,
 voltage and watts, plus 30 minutes of local history. Keeps the original power-profile
-controls and theme styling.
+controls, compact layout, theme styling and rotating phrases.
 
 <img src="preview.png" width="520" alt="Power panel preview using simulated battery readings">
 
