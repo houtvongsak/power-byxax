@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+node --check Model.js
+node --check Diagnostics.js
+node --test tests/diagnostics.test.js
+python3 -m unittest discover -s tests -p 'test_*.py' -v
+python3 - <<'PY'
+import json
+from pathlib import Path
+m = json.loads(Path('manifest.json').read_text())
+assert m['id'] == 'io.github.houtvongsak.power-byxax'
+assert m['omarchy']['clonedFrom'] == 'omarchy.power'
+for entry in m['entryPoints'].values():
+    assert Path(entry).is_file(), entry
+PY
+# qmlformat parses without requiring Quickshell's runtime imports.
+formatter="${QMLFORMAT:-}"
+if [[ -z $formatter ]] && command -v qmlformat >/dev/null; then formatter=$(command -v qmlformat); fi
+if [[ -z $formatter && -x /usr/lib/qt6/bin/qmlformat ]]; then formatter=/usr/lib/qt6/bin/qmlformat; fi
+if [[ -n $formatter ]]; then
+  for file in ./*.qml tests/*.qml; do "$formatter" "$file" >/dev/null; done
+elif [[ ${CI:-} == true ]]; then
+  echo "qmlformat is required in CI" >&2
+  exit 1
+else
+  echo "qmlformat unavailable; QML parsing skipped."
+fi
+if command -v omarchy >/dev/null; then omarchy plugin validate .; fi

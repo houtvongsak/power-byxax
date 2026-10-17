@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Mirror an official checkout onto upstream, then merge locally. Never pushes main.
+set -euo pipefail
+source_dir=$(realpath "${1:?Usage: bin/sync-stock official-checkout tag [--push]}")
+tag=${2:?Release tag required}
+push=${3:-}
+[[ $tag =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ && ( -z $push || $push == --push ) ]] || exit 1
+plugin_dir="$source_dir/shell/plugins/panels/power"
+for file in Panel.qml Model.js manifest.json; do test -f "$plugin_dir/$file"; done
+test -f "$source_dir/LICENSE"
+python3 - "$plugin_dir/manifest.json" <<'PY'
+import json, sys
+assert json.load(open(sys.argv[1]))['id'] == 'omarchy.power'
+PY
+[[ $(git branch --show-current) == main && -z $(git status --porcelain) ]] || { echo 'Start on a clean main branch.' >&2; exit 1; }
+git rev-parse --verify upstream >/dev/null 2>&1 || git rev-parse --verify origin/upstream >/dev/null
+sha=$(git -C "$source_dir" rev-parse HEAD)
+git checkout -q upstream
+git ls-files -z | xargs -0 -r git rm -q
+cp -a "$plugin_dir/." .
+cp "$source_dir/LICENSE" LICENSE
+git add -A
+if ! git diff --cached --quiet; then
+  git commit -q -m "Stock omarchy.power from Omarchy $tag ($sha)"
+fi
+if [[ $push == --push ]]; then git push -q origin upstream; fi
+git checkout -q main
+if git merge-base --is-ancestor upstream main; then
+  echo false
+  exit 0
+fi
+if ! git merge --quiet --no-edit -m "Merge Omarchy $tag power plugin" upstream >&2; then
+  if [[ -n ${SYNC_FAILURE_FILE:-} ]]; then git diff --name-only --diff-filter=U > "$SYNC_FAILURE_FILE"; fi
+  git merge --abort
+  exit 2
+fi
+echo true

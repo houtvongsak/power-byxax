@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "io.github.houtvongsak.power-byxax",
   "name": "power-byxax",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "author": "houtvongsak",
-  "description": "Battery, power profile, and system stats",
+  "description": "Clear battery charging states, live current and voltage, and recent power history",
   "kinds": [
     "bar-widget"
   ],
@@ -13,7 +13,7 @@
   },
   "barWidget": {
     "displayName": "power-byxax",
-    "description": "Battery, power profile, and system stats",
+    "description": "Clear battery charging states, live current and voltage, and recent power history",
     "category": "System",
     "allowMultiple": false
   },

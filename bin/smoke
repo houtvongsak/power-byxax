@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Instantiate the real panel without opening a window or changing the bar.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+task_dir=$(mktemp -d -t power-byxax-smoke.XXXXXX)
+trap 'rm -rf "$task_dir"' EXIT
+for dir in Commons Ui services; do ln -s "${OMARCHY_PATH:-/usr/share/omarchy}/shell/$dir" "$task_dir/$dir"; done
+ln -s "$PWD" "$task_dir/plugin"
+cp tests/smoke.qml "$task_dir/shell.qml"
+XDG_STATE_HOME="$task_dir/state" quickshell --no-color --path "$task_dir/shell.qml" 2>&1 | tee "$task_dir/result"
+grep -q POWER_SMOKE_OK "$task_dir/result"
+if grep -E 'ERROR:|TypeError:|ReferenceError:|Binding loop|Cannot assign|Unable to assign' "$task_dir/result"; then exit 1; fi

@@ -5,6 +5,8 @@ import Quickshell.Services.UPower
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
+import "Diagnostics.js" as Diagnostics
+import "." as Local
 
 Panel {
   id: root
@@ -13,6 +15,10 @@ Panel {
   // manageIpc: false so this panel can own the single IpcHandler the target
   // permits — needed for the togglePercentage method below.
   manageIpc: false
+  // The shared collector keeps sampling while the popup is closed.
+  property string selectedBatteryId: ""
+  readonly property var telemetry: Local.PowerStore.snapshot
+  readonly property var diagnosis: Diagnostics.view(telemetry, selectedBatteryId, Local.PowerStore.now)
   property var batteryInfo: ({})
   property var systemInfo: ({})
   property var profiles: []
@@ -25,6 +31,7 @@ Panel {
   // icon-sized fraction of the slot the fallback assumes.
   readonly property real openPanelIndicatorWidth: showPercentage && !button.vertical ? button.glyphPaintedWidth : 0
   readonly property bool batteryPresent: {
+    if (telemetry.timestamp) return (telemetry.batteries || []).length > 0
     var device = UPower.displayDevice
     return !!(device && device.isPresent)
   }
@@ -49,6 +56,13 @@ Panel {
 
   function batteryIcon() {
     var device = UPower.displayDevice
+    if (telemetry.timestamp) {
+      if (!diagnosis.battery || !Diagnostics.known(diagnosis.battery.percentage)) return "󰂑"
+      var levels = diagnosis.code === "charging" || diagnosis.code === "slow"
+        ? ["󰢜", "󰂆", "󰂇", "󰂈", "󰢝", "󰂉", "󰢞", "󰂊", "󰂋", "󰂅"]
+        : ["󰁺", "󰁻", "󰁼", "󰁽", "󰁾", "󰁿", "󰂀", "󰂁", "󰂂", "󰁹"]
+      return levels[Math.max(0, Math.min(9, Math.floor(root.batteryFraction * 10)))]
+    }
     return Model.batteryIcon(device, root.discharging, upowerStates())
   }
 
@@ -62,33 +76,33 @@ Panel {
   }
 
   readonly property bool fullyCharged: {
-    var device = UPower.displayDevice
-    return device && device.isPresent && device.state === UPowerDeviceState.FullyCharged && !root.chargeThresholdActive
+    return diagnosis.code === "full"
   }
   readonly property bool discharging: {
-    var device = UPower.displayDevice
-    return !!(device && device.isPresent && UPower.onBattery)
+    return telemetry.timestamp ? diagnosis.code === "discharging" || telemetry.acOnline === false : UPower.onBattery
   }
   readonly property bool chargeThresholdActive: {
-    var device = UPower.displayDevice
-    return Model.chargeThresholdActive(device, root.discharging, upowerStates())
+    return diagnosis.code === "limit"
   }
   readonly property bool batteryFull: fullyCharged || (!root.discharging && batteryFraction >= 1)
   readonly property bool batteryFlowIdle: batteryFull || chargeThresholdActive
 
   // 0..1 charge level, used by the visual progress bar.
   readonly property real batteryFraction: {
+    if (telemetry.timestamp) return diagnosis.battery && Diagnostics.known(diagnosis.battery.percentage) ? diagnosis.battery.percentage / 100 : 0
     var d = UPower.displayDevice
     return Model.batteryFraction(d)
   }
 
   readonly property bool charging: {
-    var d = UPower.displayDevice
-    return d && d.isPresent && !UPower.onBattery && !root.batteryFlowIdle
+    return diagnosis.code === "charging" || diagnosis.code === "slow"
   }
 
+  readonly property color contentForeground: root.bar ? root.bar.foreground : Color.foreground
+  readonly property string contentFontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+
   readonly property color batteryFillColor: {
-    return root.bar ? root.bar.foreground : Color.foreground
+    return root.bar ? root.contentForeground : Color.foreground
   }
 
   // Cute agent-flavored phrases shown in the hero status line, rotated on a
@@ -124,12 +138,10 @@ Panel {
     if (discharging) return onBatteryPhrases
     return []
   }
-  readonly property bool rotatingPhrases: activePhrases.length > 0
+  readonly property bool rotatingPhrases: false // Diagnostics own the status text; keep upstream animation dormant.
 
   readonly property string heroStatusText: {
-    if (fullyCharged) return "Fully charged"
-    if (rotatingPhrases) return activePhrases[phraseIndex % activePhrases.length]
-    return modeLabel()
+    return diagnosis.label
   }
 
   function refresh() {
@@ -165,7 +177,7 @@ Panel {
 
   function setProfile(profile) {
     if (!profile || actionProc.running) return
-    actionProc.command = ["omarchy-powerprofiles-set", root.discharging ? "battery" : "ac", profile]
+    actionProc.command = ["omarchy-powerprofiles-set", telemetry.acOnline === true ? "ac" : "battery", profile]
     actionProc.running = true
   }
 
@@ -183,6 +195,8 @@ Panel {
     function hide() { root.close() }
     function toggle() { root.toggle() }
     function togglePercentage() { root.togglePercentage() }
+    function toggleHistory() { diagnosticDetails.historyOpen = !diagnosticDetails.historyOpen }
+    function status(): string { return JSON.stringify(root.diagnosis) }
   }
 
   onOpenedChanged: {
@@ -278,7 +292,7 @@ Panel {
     anchors.fill: parent
     bar: root.bar
     text: root.showPercentage && !vertical
-      ? Math.round(root.batteryFraction * 100) + "% " + root.batteryIcon()
+      ? (root.telemetry.timestamp && (!root.diagnosis.battery || !Diagnostics.known(root.diagnosis.battery.percentage)) ? "— " : Math.round(root.batteryFraction * 100) + "% ") + root.batteryIcon()
       : root.batteryIcon()
     slotSize: Style.bar.iconSlot * (root.showPercentage && !vertical ? 2 : 1)
     tooltipText: ""
@@ -296,7 +310,7 @@ Panel {
     bar: root.bar
     open: root.opened && root.batteryPresent
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(380))
+    contentWidth: panel.fittedContentWidth(Style.space(440))
     contentHeight: panel.fittedContentHeight(column.implicitHeight)
 
     PanelKeyCatcher {
@@ -310,12 +324,18 @@ Panel {
       onActivateRequested: if (root.cursorActive) root.activateSelectedProfile()
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
+      onTextKey: function(t) { if (t === "h") diagnosticDetails.historyOpen = !diagnosticDetails.historyOpen }
+
+      Flickable {
+        anchors.fill: parent
+        contentHeight: column.implicitHeight
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        flickableDirection: Flickable.VerticalFlick
 
       Column {
         id: column
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: parent.top
+        width: parent.width
         spacing: Style.space(14)
 
         // ---------- Hero: battery icon · title/status · percentage ----------
@@ -327,8 +347,8 @@ Panel {
             id: heroIcon
             textFormat: Text.PlainText
             text: root.batteryIcon()
-            color: root.bar.foreground
-            font.family: root.bar.fontFamily
+            color: root.contentForeground
+            font.family: root.contentFontFamily
             font.pixelSize: Style.font.display
             anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
@@ -347,8 +367,8 @@ Panel {
 
             Text {
               text: "Battery"
-              color: root.bar.foreground
-              font.family: root.bar.fontFamily
+              color: root.contentForeground
+              font.family: root.contentFontFamily
               font.pixelSize: Style.font.title
               font.bold: true
               elide: Text.ElideRight
@@ -359,8 +379,8 @@ Panel {
               id: heroStatus
               textFormat: Text.PlainText
               text: root.heroStatusText.toUpperCase()
-              color: Qt.darker(root.bar.foreground, 1.4)
-              font.family: root.bar.fontFamily
+              color: Qt.darker(root.contentForeground, 1.4)
+              font.family: root.contentFontFamily
               font.pixelSize: Style.font.caption
               font.bold: true
               font.letterSpacing: 1.2
@@ -372,9 +392,9 @@ Panel {
           Text {
             id: heroPercent
             textFormat: Text.PlainText
-            text: root.batteryInfo.percentage || "—"
-            color: root.bar.foreground
-            font.family: root.bar.fontFamily
+            text: root.diagnosis.battery && Diagnostics.known(root.diagnosis.battery.percentage) ? Math.round(root.diagnosis.battery.percentage) + "%" : "—"
+            color: root.contentForeground
+            font.family: root.contentFontFamily
             font.pixelSize: Style.font.displayLarge
             font.bold: true
             anchors.right: parent.right
@@ -393,11 +413,12 @@ Panel {
             id: barTrack
             anchors.fill: parent
             radius: height / 2
-            color: Qt.rgba(root.bar.foreground.r, root.bar.foreground.g, root.bar.foreground.b, 0.12)
+            color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.12)
           }
 
           Rectangle {
             id: barFill
+            visible: root.diagnosis.battery && Diagnostics.known(root.diagnosis.battery.percentage)
             anchors.left: barTrack.left
             anchors.verticalCenter: barTrack.verticalCenter
             height: barTrack.height
@@ -419,41 +440,21 @@ Panel {
           }
         }
 
-        // ---------- Stats ----------
-        // Visibility is intentionally only gated by "we've ever loaded data" so
-        // the section never collapses mid-transition. fullyCharged is *not* part
-        // of the condition: UPower briefly reports FullyCharged on plug-in when
-        // the battery sits above the charge-control start threshold, and we
-        // refuse to flicker the whole panel for that ~1s window.
-        Row {
-          visible: root.batteryInfo.percentage !== undefined
+        BatteryDetails {
+          id: diagnosticDetails
           width: parent.width
-          spacing: Style.space(20)
-
-          Column {
-            width: (parent.width - parent.spacing) / 2
-            spacing: Style.spacing.labelGap
-            InfoPair { label: "Battery size"; value: root.batteryInfo.size || "" }
-            InfoPair { label: "Charge cycles"; value: root.batteryInfo.cycles || "—" }
-          }
-
-          Column {
-            width: (parent.width - parent.spacing) / 2
-            spacing: Style.spacing.labelGap
-            InfoPair {
-              label: root.chargeThresholdActive ? "Charge limit" : (root.discharging ? "Time left" : "Time to full")
-              value: root.chargeThresholdActive ? (root.batteryInfo.threshold || "-") : (root.batteryFlowIdle ? "-" : (root.batteryInfo.time || "—"))
-            }
-            InfoPair {
-              label: root.chargeThresholdActive ? "Battery state" : (root.discharging ? "Discharging" : "Charging")
-              value: root.chargeThresholdActive ? "Holding" : (root.batteryFull ? "-" : (root.batteryInfo.rate || ""))
-            }
-          }
+          snapshot: root.telemetry
+          reading: root.diagnosis
+          now: Local.PowerStore.now
+          error: Local.PowerStore.error
+          foreground: root.contentForeground
+          fontFamily: root.contentFontFamily
+          onBatteryPicked: function(batteryId) { root.selectedBatteryId = batteryId }
         }
 
         // ---------- Power profile picker ----------
         PanelSeparator {
-          foreground: root.bar.foreground
+          foreground: root.contentForeground
         }
 
         Column {
@@ -462,8 +463,8 @@ Panel {
 
           PanelSectionHeader {
             text: "POWER PROFILE"
-            foreground: root.bar.foreground
-            fontFamily: root.bar.fontFamily
+            foreground: root.contentForeground
+            fontFamily: root.contentFontFamily
           }
 
           Row {
@@ -485,8 +486,8 @@ Panel {
                 iconSize: Style.font.title
                 text: String(modelData).charAt(0).toUpperCase() + String(modelData).slice(1)
                 fontSize: Style.font.bodySmall
-                foreground: root.bar.foreground
-                fontFamily: root.bar.fontFamily
+                foreground: root.contentForeground
+                fontFamily: root.contentFontFamily
                 horizontalPadding: Style.spacing.controlPaddingX
                 verticalPadding: Style.spacing.controlPaddingY + Style.space(2)
                 bordered: true
@@ -504,6 +505,7 @@ Panel {
           }
         }
       }
+      } // Flickable
     }
   }
 
@@ -521,16 +523,16 @@ Panel {
 
   component InfoLabel: Text {
     textFormat: Text.PlainText
-    color: root.bar.foreground
+    color: root.contentForeground
     opacity: 0.6
-    font.family: root.bar.fontFamily
+    font.family: root.contentFontFamily
     font.pixelSize: Style.font.bodySmall
   }
 
   component InfoValue: Text {
     textFormat: Text.PlainText
-    color: root.bar.foreground
-    font.family: root.bar.fontFamily
+    color: root.contentForeground
+    font.family: root.contentFontFamily
     font.pixelSize: Style.font.bodySmall
   }
 }

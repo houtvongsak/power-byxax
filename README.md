@@ -1,26 +1,122 @@
 # power-byxax
 
-An Omarchy power panel based on the official `omarchy.power` plugin.
+**A clearer Omarchy battery panel: see whether power is flowing, how much, and what changed.**
 
-This repository currently contains the stock panel with its own plugin identity.
-Clearer charging states, live current and voltage readings, and recent power
-history are planned; they are not implemented yet.
+Based on Omarchy's official `omarchy.power` plugin, with the original power-profile
+controls and theme styling. Replaces the ambiguous “Holding” status with labels
+based on the readings your laptop actually provides.
 
-## Source
+<img src="preview.png" width="520" alt="Power panel with a simulated paused-charging state, measurement fields, and battery details">
 
-- Official repository: [basecamp/omarchy](https://github.com/basecamp/omarchy)
-- Baseline release: **v4.0.4**
-- Source commit: `c668141e9c42b13c80c9ca4ea108e11708c5e8a5`
-- Plugin directory: [`shell/plugins/panels/power`](https://github.com/basecamp/omarchy/tree/c668141e9c42b13c80c9ca4ea108e11708c5e8a5/shell/plugins/panels/power)
-- Plugin ID: `io.github.houtvongsak.power-byxax`
+## What it shows
 
-The `upstream` branch preserves the original plugin files and Omarchy license.
-The `main` branch contains this plugin's changes. Automatic upstream syncing
-has not been configured yet.
+| State | Meaning |
+|---|---|
+| Charging | The battery reports charging; measured flow is shown when available. |
+| Charging slowly | Small positive charging current persists for at least 10 seconds. |
+| Plugged in · Not charging | External power is detected; the battery reports a pause. Cause unknown. |
+| Charge limit reached | A reduced limit is configured, the battery is at that limit, and no charging flow is measured. |
+| Battery draining on AC | External power is detected, but the battery reports discharge. |
+| Readings disagree | Connection, status, or flow readings conflict. |
+| Telemetry unavailable | The collector has not supplied a reading for over 20 seconds. |
 
-`Panel.qml` and `Model.js` currently match the official source byte for byte.
-The manifest identifies this as a clone of `omarchy.power`, keeping the original
-IPC targets used by Omarchy.
+- Current, voltage, and power update every **5 seconds**, with up to **15 seconds of averaging** within the same battery state. Small currents use **mA**.
+- Select individual batteries on laptops with multiple packs. Battery names are discovered automatically.
+- See the configured charge limit, estimated remaining time, health, full/design capacity, reported cycles, and temperature where available.
+- Press **h** or click **Show history** for current/voltage graphs and recent connection/state changes.
+- History covers the last **30 minutes**, survives shell reloads, and marks observation gaps.
+- Several observed AC changes within two minutes show a **Power connection unstable** notice. This does not diagnose a cable, jack, or charger fault.
+
+<details>
+<summary>History preview</summary>
+
+<img src="screenshots/history.png" width="520" alt="Simulated battery current and voltage history with recent power events">
+
+Previews use simulated readings and are labelled accordingly. The installed panel uses live readings.
+</details>
+
+## Install
+
+Requires **Omarchy 4.0.4 or a compatible later Quickshell shell**, and **Python 3**.
+There are no third-party Python dependencies. Standard Linux sysfs readings are
+preferred; `busctl` reads UPower properties as a fallback. The panel requires
+Omarchy and is not a standalone widget for other desktops.
+
+```sh
+omarchy plugin add https://github.com/houtvongsak/power-byxax.git --enable --yes
+```
+
+The plugin takes the built-in power widget's place. Left-click opens it;
+right-click toggles the bar percentage. Existing power-profile buttons remain.
+Scroll the popup if expanded history is taller than the screen.
+
+```sh
+omarchy plugin update io.github.houtvongsak.power-byxax
+omarchy plugin remove io.github.houtvongsak.power-byxax  # restores the stock widget
+```
+
+## Readings and local history
+
+Monitoring runs while the widget is loaded, including when its popup is closed.
+It does not install a system service. Nothing is sent online by the collector.
+The bounded history file is private to your user:
+
+```text
+${XDG_STATE_HOME:-~/.local/state}/power-byxax/history.json
+```
+
+A single snapshot, without writing history:
+
+```sh
+python3 bin/telemetry.py
+```
+
+The installed panel also exposes its interpreted status:
+
+```sh
+omarchy-shell omarchy.power status
+```
+
+Missing readings show **Unavailable**, not zero. An ≈ marks current estimated
+from watts ÷ volts. UPower's configured threshold values alone do not establish
+that a limit is enabled; the kernel setting takes precedence. Firmware can report
+inaccurate values, including a zero cycle count. Health is reported full capacity
+relative to design capacity, not a hardware diagnosis.
+
+Current and voltage trends cannot prove pre-charge recovery, thermal protection,
+or a faulty jack. CPU temperature is not substituted for battery temperature.
+Sampling may miss very short connection changes; suspend/logout periods contain
+no observations. Persistent history requires a writable state directory; live
+readings continue with an error notice if saving fails.
+
+## Development and updates
+
+```sh
+bin/check    # scenario tests, syntax, manifest, QML parsing
+bin/smoke    # real Quickshell panel + two live samples; requires an Omarchy session
+```
+
+The collector and decision tests use simulated hardware and need only Python 3,
+Node.js 18+, and Git. QML parsing additionally uses Qt 6's `qmlformat`.
+For an isolated layout preview, without capturing your desktop:
+
+```sh
+python3 bin/telemetry.py > /tmp/power-snapshot.json
+bin/preview /tmp/power-snapshot.json /tmp/power-preview.png --history
+```
+
+GitHub Actions checks every push/PR. A separate job checks official Omarchy
+releases every Monday at **04:00 UTC**. It updates `upstream`, merges into `main`,
+runs the checks, and publishes a patch release only if those checks pass. Conflicts
+or failures open a GitHub issue with the workflow link; this workflow does not
+create update PRs. GitHub's repository watch/notification settings control whether
+you receive notifications for issues and releases. Updates reach installed users
+through `omarchy plugin update`.
+
+The initial baseline is [Omarchy v4.0.4](https://github.com/basecamp/omarchy/tree/v4.0.4/shell/plugins/panels/power),
+commit `c668141e9c42b13c80c9ca4ea108e11708c5e8a5`. The `upstream` branch holds
+the stock plugin and original license; `main` adds this plugin's identity,
+telemetry, diagnostics, and UI. See [MAINTAINING.md](MAINTAINING.md).
 
 ## License
 

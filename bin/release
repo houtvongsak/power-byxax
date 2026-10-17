@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+part=${1:-}
+notes=${2:-}
+[[ $part =~ ^(major|minor|patch)$ && -n $notes ]] || { echo 'Usage: bin/release major|minor|patch "release notes"' >&2; exit 1; }
+[[ $(git branch --show-current) == main ]] || { echo "Release from main." >&2; exit 1; }
+[[ -z $(git status --porcelain) ]] || { echo "Commit changes before releasing." >&2; exit 1; }
+bin/check
+new=$(python3 - "$part" <<'PY'
+import json, re, sys
+from pathlib import Path
+p = Path('manifest.json')
+m = json.loads(p.read_text())
+assert re.fullmatch(r'\d+\.\d+\.\d+', m['version'])
+version = list(map(int, m['version'].split('.')))
+index = ['major', 'minor', 'patch'].index(sys.argv[1])
+version[index] += 1
+for i in range(index + 1, 3): version[i] = 0
+m['version'] = '.'.join(map(str, version))
+p.write_text(json.dumps(m, indent=2) + '\n')
+print(m['version'])
+PY
+)
+git commit -q -m "Release v$new" -m "$notes" manifest.json
+git tag -a "v$new" -m "v$new" -m "$notes"
+git push --atomic origin main "v$new"
+body_file=$(mktemp -t power-byxax-release.XXXXXX)
+trap 'rm -f "$body_file"' EXIT
+printf '%s\n' "$notes" > "$body_file"
+gh release create "v$new" --verify-tag --title "v$new" --notes-file "$body_file"

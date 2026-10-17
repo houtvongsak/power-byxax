@@ -1,0 +1,87 @@
+name: Sync with Omarchy
+
+on:
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: power-byxax-release
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Find latest stable Omarchy release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(gh api repos/basecamp/omarchy/releases/latest --jq .tag_name)
+          [[ $tag =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Unexpected release tag" >&2; exit 1; }
+          echo "OMARCHY_TAG=$tag" >> "$GITHUB_ENV"
+
+      - name: Fetch official power plugin
+        run: |
+          git clone -q --depth 1 --branch "$OMARCHY_TAG" --filter=blob:none --sparse \
+            https://github.com/basecamp/omarchy.git "$RUNNER_TEMP/omarchy"
+          git -C "$RUNNER_TEMP/omarchy" sparse-checkout set shell/plugins/panels/power
+          for file in Panel.qml Model.js manifest.json; do
+            test -f "$RUNNER_TEMP/omarchy/shell/plugins/panels/power/$file"
+          done
+          test -f "$RUNNER_TEMP/omarchy/LICENSE"
+
+      - name: Update upstream and merge into main
+        id: merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898333+github-actions[bot]@users.noreply.github.com"
+          gh auth setup-git --hostname github.com
+          export SYNC_FAILURE_FILE="$RUNNER_TEMP/sync-failure.txt"
+          changed=$(bin/sync-stock "$RUNNER_TEMP/omarchy" "$OMARCHY_TAG" --push)
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+
+      - name: Install QML parser
+        if: steps.merge.outputs.changed == 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qt6-declarative-dev-tools
+
+      - name: Validate merged plugin and publish patch release
+        if: steps.merge.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh auth setup-git --hostname github.com
+          bin/release patch "Synced the official power plugin from Omarchy $OMARCHY_TAG; automated checks passed."
+
+      - name: Report failed sync
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Omarchy ${OMARCHY_TAG:-release} power sync needs attention"
+          if gh issue list --state open --json title --jq '.[].title' | grep -Fxq "$title"; then exit 0; fi
+          body="$RUNNER_TEMP/sync-issue.md"
+          printf 'The automatic upstream sync failed. Review the [workflow run](%s).\n\n' "$RUN_URL" > "$body"
+          if [[ -s $RUNNER_TEMP/sync-failure.txt ]]; then
+            printf 'Conflicting files:\n\n' >> "$body"
+            sed 's/^/- /' "$RUNNER_TEMP/sync-failure.txt" >> "$body"
+          fi
+          printf '\nMain is published only after a successful merge and checks. Inspect the remote branches before resolving or retrying.\n' >> "$body"
+          gh issue create --title "$title" --body-file "$body"
+

@@ -1,0 +1,3 @@
+singleton PowerStore 1.0 PowerStore.qml
+BatteryDetails 1.0 BatteryDetails.qml
+TrendGraph 1.0 TrendGraph.qml

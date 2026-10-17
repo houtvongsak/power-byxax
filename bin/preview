@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Render an isolated panel artifact from a telemetry JSON fixture.
+set -euo pipefail
+[[ $# -ge 2 ]] || { echo 'Usage: bin/preview fixture.json output.png [--history]' >&2; exit 1; }
+fixture=$(realpath "$1")
+output=$(realpath -m "$2")
+history=0
+[[ ${3:-} == --history ]] && history=1
+cd "$(dirname "$0")/.."
+task_dir=$(mktemp -d -t power-byxax-preview.XXXXXX)
+trap 'rm -rf "$task_dir"' EXIT
+for dir in Commons Ui services; do ln -s "${OMARCHY_PATH:-/usr/share/omarchy}/shell/$dir" "$task_dir/$dir"; done
+ln -s "$PWD" "$task_dir/plugin"
+cp tests/render.qml "$task_dir/shell.qml"
+QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software POWER_PREVIEW_FIXTURE="$fixture" \
+  POWER_PREVIEW_OUTPUT="$output" POWER_PREVIEW_HISTORY="$history" \
+  quickshell --no-color --path "$task_dir/shell.qml" 2>&1 | tee "$task_dir/result"
+grep -q POWER_RENDER_OK "$task_dir/result"
+if grep -E 'ERROR:|TypeError:|ReferenceError:|Binding loop|Cannot assign|Unable to assign' "$task_dir/result"; then exit 1; fi
