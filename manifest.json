@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.houtvongsak.power-byxax",
   "name": "power-byxax",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "author": "houtvongsak",
   "description": "Clear battery charging states, live current and voltage, and recent power history",
   "kinds": [
