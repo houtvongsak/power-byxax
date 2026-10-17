@@ -52,8 +52,13 @@ Scroll the popup if expanded history is taller than the screen.
 
 ```sh
 omarchy plugin update io.github.houtvongsak.power-byxax
+omarchy restart shell  # load the updated QML and collector
 omarchy plugin remove io.github.houtvongsak.power-byxax  # restores the stock widget
 ```
+
+This Omarchy shell version can retain cached QML/IPC handlers after a plugin
+rescan. Restart the shell after code updates; updating files alone may leave the
+old implementation running.
 
 ## Readings and local history
 

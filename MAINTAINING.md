@@ -85,7 +85,8 @@ connection events, and Git merge/conflict behavior. It parses all QML files when
 CI requires QML parsing.
 
 `bin/smoke` starts a separate Quickshell config with the real panel and temporary
-state storage. It checks two successive live samples without opening its popup
+state storage. It checks two successive live samples and verifies graph objects
+are created only while open, without opening its popup
 or changing the installed bar. `bin/preview` renders `BatteryDetails.qml` in an
 isolated window to a PNG; it does not capture desktop content.
 
@@ -127,3 +128,8 @@ The audit also removed unused stock battery/system polling, dormant rotating
 phrases/animations, and unused statistics components. The popup uses the stock
 380-unit width; advanced details are collapsed and graphs are unloaded when the
 popup closes. Keyboard profile navigation scrolls the controls into view.
+
+Installed updates must be followed by `omarchy restart shell` on shells that
+retain QML/IPC caches. An isolated smoke test always uses a fresh engine and does
+not establish that a running desktop has reloaded updated code. Verify a new
+collector PID and the installed IPC methods after restarting.
