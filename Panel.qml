@@ -152,6 +152,10 @@ Panel {
       var idx = profiles.indexOf(activeProfile)
       profileIndex = idx >= 0 ? idx : 0
       cursorActive = false
+    } else {
+      diagnosticDetails.detailsOpen = false
+      diagnosticDetails.historyOpen = false
+      contentFlick.contentY = 0
     }
   }
 

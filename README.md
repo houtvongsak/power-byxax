@@ -24,6 +24,7 @@ based on the readings your laptop actually provides.
 - Select individual batteries on laptops with multiple packs. Battery names are discovered automatically.
 - Keep the default view compact. Press **d** for the charge limit, health, full/design capacity, reported cycles, temperature, and data-source details.
 - Press **g** or click **Show history** for current/voltage graphs and recent connection/state changes.
+- Details and history collapse when you close the popup, so it reopens in the compact view.
 - History covers the last **30 minutes**, survives shell reloads, and marks observation gaps. Graphs are created only while open.
 - Several observed AC changes within two minutes show a **Power connection unstable** notice. This does not diagnose a cable, jack, or charger fault.
 
