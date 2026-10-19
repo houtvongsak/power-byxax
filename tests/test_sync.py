@@ -61,6 +61,21 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), "false")
         self.assertEqual(self.git(self.repo, "rev-parse", "main"), self.before)
 
+    def test_local_ignored_files_do_not_enter_upstream(self):
+        (self.repo / ".gitignore").write_text("__pycache__/\n*.pyc\n")
+        self.commit(self.repo, "Ignore local Python caches")
+        self.before = self.git(self.repo, "rev-parse", "main")
+        cache = self.repo / "bin/__pycache__/telemetry.pyc"
+        cache.parent.mkdir()
+        cache.write_bytes(b"local compiled Python cache")
+        original_upstream = self.git(self.repo, "rev-parse", "upstream")
+        result = self.run_sync()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "false")
+        self.assertEqual(self.git(self.repo, "rev-parse", "upstream"), original_upstream)
+        self.assertEqual(self.git(self.repo, "rev-parse", "main"), self.before)
+        self.assertEqual(cache.read_bytes(), b"local compiled Python cache")
+
     def test_nonconflicting_update_preserves_customizations_and_deletions(self):
         (self.source / "Obsolete.qml").unlink()
         (self.source / "Helper.js").write_text("// new upstream helper\n")

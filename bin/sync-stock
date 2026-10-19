@@ -19,7 +19,11 @@ git checkout -q upstream
 git ls-files -z | xargs -0 -r git rm -q
 cp -a "$plugin_dir/." .
 cp "$source_dir/LICENSE" LICENSE
-git add -A
+# Stage only official files; ignored local files can survive the branch switch.
+git add -f -- LICENSE
+while IFS= read -r -d '' file; do
+  git add -f -- "${file#shell/plugins/panels/power/}"
+done < <(git -C "$source_dir" ls-files -z -- shell/plugins/panels/power)
 if ! git diff --cached --quiet; then
   git commit -q -m "Stock omarchy.power from Omarchy $tag ($sha)"
 fi
