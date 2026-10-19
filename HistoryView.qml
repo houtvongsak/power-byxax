@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "Diagnostics.js" as Diagnostics
 
@@ -8,7 +9,7 @@ Column {
   property var snapshot: ({})
   property var reading: ({})
   property var battery: ({})
-  property color foreground: Color.foreground
+  property color foreground: Commons.Color.foreground
   property string fontFamily: Style.font.family
   readonly property var recentEvents: (reading.events || []).slice(0, 8)
   readonly property string singleBatteryId: (snapshot.batteries || []).length === 1 ? snapshot.batteries[0].id : ""

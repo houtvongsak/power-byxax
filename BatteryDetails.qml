@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "Diagnostics.js" as Diagnostics
 
@@ -9,7 +10,7 @@ Column {
   property var reading: ({})
   property real now: Date.now() / 1000
   property string error: ""
-  property color foreground: Color.foreground
+  property color foreground: Commons.Color.foreground
   property string fontFamily: Style.font.family
   property bool historyOpen: false
   property bool detailsOpen: false

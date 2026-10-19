@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "./plugin" as Battery
 
@@ -11,18 +12,18 @@ ShellRoot {
     visible: true
     implicitWidth: Number(Quickshell.env("POWER_PREVIEW_WIDTH")) || Style.space(380)
     implicitHeight: capture.height
-    color: Color.popups.background
+    color: Commons.Color.popups.background
     Rectangle {
       id: capture
       width: parent.width
       height: card.height
-      color: Color.popups.background
+      color: Commons.Color.popups.background
       BorderSurface {
         id: card
         width: parent.width
         height: contentHost.height + contentTopInset + contentBottomInset
-        color: Color.popups.background
-        borderSpec: Border.surfaceSpec("popups", "border", Color.popups.border, Math.max(1, Style.space(2)))
+        color: Commons.Color.popups.background
+        borderSpec: Border.surfaceSpec("popups", "border", Commons.Color.popups.border, Math.max(1, Style.space(2)))
         padding: Style.spacing.popupPadding
         radius: Style.cornerRadius
         Item {

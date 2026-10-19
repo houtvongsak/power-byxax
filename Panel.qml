@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Services.UPower
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "Model.js" as Model
 import "Diagnostics.js" as Diagnostics
@@ -87,11 +88,11 @@ Panel {
     return diagnosis.code === "charging" || diagnosis.code === "slow"
   }
 
-  readonly property color contentForeground: root.bar ? root.bar.foreground : Color.foreground
+  readonly property color contentForeground: root.bar ? root.bar.foreground : Commons.Color.foreground
   readonly property string contentFontFamily: root.bar ? root.bar.fontFamily : Style.font.family
 
   readonly property color batteryFillColor: {
-    return root.bar ? root.contentForeground : Color.foreground
+    return root.bar ? root.contentForeground : Commons.Color.foreground
   }
 
   // Cute agent-flavored phrases shown in the hero status line, rotated on a

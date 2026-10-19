@@ -1,11 +1,12 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import "Diagnostics.js" as Diagnostics
 
 Item {
   id: root
   property var points: []
-  property color foreground: Color.foreground
+  property color foreground: Commons.Color.foreground
   property string title: ""
   property string unit: ""
   property bool zeroAxis: false
