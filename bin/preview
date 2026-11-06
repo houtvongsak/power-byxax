@@ -27,6 +27,9 @@ Item {
   property Item focusTarget
   property int contentWidth
   property int contentHeight
+  property Component content: null
+  readonly property Item loadedContent: content ? content.createObject(this) : null
+  readonly property real loadedContentHeight: loadedContent ? loadedContent.implicitHeight : 0
   width: contentWidth
   height: contentHeight
   function fittedContentWidth(value) { return value }
@@ -44,7 +47,7 @@ python3 - "$task_dir/plugin/Panel.qml" <<'PY'
 from pathlib import Path
 import sys
 source = Path('Panel.qml').read_text()
-source = source.replace('  id: root\n', '  id: root\n  property alias previewContent: column\n  property alias previewDetails: diagnosticDetails\n', 1)
+source = source.replace('  id: root\n', '  id: root\n  readonly property Item previewContent: panel.loadedContent ? panel.loadedContent.column : null\n  readonly property Item previewDetails: panel.loadedContent ? panel.loadedContent.details : null\n', 1)
 Path(sys.argv[1]).write_text(source)
 PY
 cat > "$task_dir/plugin/PowerStore.qml" <<'QML'

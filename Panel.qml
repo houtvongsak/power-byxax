@@ -48,10 +48,10 @@ Panel {
     profileIndex = Model.selectProfileIndex(profileIndex, delta, profiles)
   }
 
-  function revealProfiles() {
-    var bottom = profileRow.mapToItem(column, 0, 0).y + profileRow.height
-    contentFlick.contentY = Math.max(0, Math.min(contentFlick.contentHeight - contentFlick.height, bottom - contentFlick.height))
-  }
+  // Popup content is loaded only while open, so this state lives here
+  // where IPC and keyboard shortcuts can reach it.
+  property bool detailsOpen: false
+  property bool historyOpen: false
 
   function activateSelectedProfile() {
     if (profileIndex < 0 || profileIndex >= profiles.length) return
@@ -98,26 +98,26 @@ Panel {
   // Cute agent-flavored phrases shown in the hero status line, rotated on a
   // timer so the panel feels alive when current is flowing (either direction).
   readonly property var chargingPhrases: [
-    "Pumping power",
-    "Injecting electrons",
-    "Pouring juice",
-    "Amassing watts",
-    "Hoarding joules",
-    "Sucking volts",
-    "Topping reserves",
-    "Soaking amps",
-    "Inhaling kilowatts"
+    Commons.I18n.t("power.chargingPhrase1"),
+    Commons.I18n.t("power.chargingPhrase2"),
+    Commons.I18n.t("power.chargingPhrase3"),
+    Commons.I18n.t("power.chargingPhrase4"),
+    Commons.I18n.t("power.chargingPhrase5"),
+    Commons.I18n.t("power.chargingPhrase6"),
+    Commons.I18n.t("power.chargingPhrase7"),
+    Commons.I18n.t("power.chargingPhrase8"),
+    Commons.I18n.t("power.chargingPhrase9")
   ]
   readonly property var onBatteryPhrases: [
-    "Slurping power",
-    "Spending joules",
-    "Draining watts",
-    "Burning electrons",
-    "Sipping juice",
-    "Spending coulombs",
-    "Bleeding amps",
-    "Guzzling volts",
-    "Munching reserves"
+    Commons.I18n.t("power.dischargingPhrase1"),
+    Commons.I18n.t("power.dischargingPhrase2"),
+    Commons.I18n.t("power.dischargingPhrase3"),
+    Commons.I18n.t("power.dischargingPhrase4"),
+    Commons.I18n.t("power.dischargingPhrase5"),
+    Commons.I18n.t("power.dischargingPhrase6"),
+    Commons.I18n.t("power.dischargingPhrase7"),
+    Commons.I18n.t("power.dischargingPhrase8"),
+    Commons.I18n.t("power.dischargingPhrase9")
   ]
   property int phraseIndex: 0
 
@@ -165,7 +165,7 @@ Panel {
     if (root.bar && root.bar.shell) root.bar.shell.updateEntryInline(root.moduleName, root.settings)
   }
 
-  IpcHandler {
+  ShellIpc {
     target: "omarchy.power"
 
     function open() { root.open() }
@@ -174,15 +174,18 @@ Panel {
     function hide() { root.close() }
     function toggle() { root.toggle() }
     function togglePercentage() { root.togglePercentage() }
-    function toggleHistory() { diagnosticDetails.historyOpen = !diagnosticDetails.historyOpen }
-    function toggleDetails() { diagnosticDetails.detailsOpen = !diagnosticDetails.detailsOpen }
+    function toggleHistory() { root.historyOpen = !root.historyOpen }
+    function toggleDetails() { root.detailsOpen = !root.detailsOpen }
     function status(): string { return JSON.stringify(root.diagnosis) }
   }
 
   onOpenedChanged: {
     if (opened) {
       if (!batteryPresent) {
-        close()
+        // Deferred: closing here writes the very property whose change
+        // is being notified, which QML reports as a binding loop for
+        // Panel.opened on every open attempt without a battery.
+        Qt.callLater(function() { root.close() })
         return
       }
 
@@ -191,11 +194,9 @@ Panel {
       profileIndex = idx >= 0 ? idx : 0
       cursorActive = false
     } else {
-      diagnosticDetails.detailsOpen = false
-      diagnosticDetails.historyOpen = false
-      contentFlick.contentY = 0
+      detailsOpen = false
+      historyOpen = false
       phraseSwap.stop()
-      heroStatus.opacity = 1.0
     }
   }
 
@@ -233,8 +234,8 @@ Panel {
   SequentialAnimation {
     id: phraseSwap
     PropertyAnimation {
-      target: heroStatus; property: "opacity"
-      to: 0.0; duration: 180; easing.type: Easing.OutQuad
+      target: panel.loadedContent ? panel.loadedContent.heroStatus : null; property: "opacity"
+      to: 0.0; duration: Style.duration(150); easing.type: Easing.OutCubic
     }
     ScriptAction {
       script: {
@@ -243,8 +244,8 @@ Panel {
       }
     }
     PropertyAnimation {
-      target: heroStatus; property: "opacity"
-      to: 1.0; duration: 260; easing.type: Easing.InQuad
+      target: panel.loadedContent ? panel.loadedContent.heroStatus : null; property: "opacity"
+      to: 1.0; duration: Style.duration(200); easing.type: Easing.OutCubic
     }
   }
 
@@ -256,7 +257,7 @@ Panel {
     function onRotatingPhrasesChanged() {
       if (!root.rotatingPhrases) {
         phraseSwap.stop()
-        heroStatus.opacity = 1.0
+        if (panel.loadedContent) panel.loadedContent.heroStatus.opacity = 1.0
       }
     }
   }
@@ -265,9 +266,10 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: root.showPercentage && !vertical
-      ? (root.telemetry.timestamp && (!root.diagnosis.battery || !Diagnostics.known(root.diagnosis.battery.percentage)) ? "— " : Math.round(root.batteryFraction * 100) + "% ") + root.batteryIcon()
-      : root.batteryIcon()
+    text: root.batteryIcon()
+    labelText: root.showPercentage && !vertical
+      ? (root.telemetry.timestamp && (!root.diagnosis.battery || !Diagnostics.known(root.diagnosis.battery.percentage)) ? "—" : Commons.I18n.formatNumber(Math.round(root.batteryFraction * 100)) + "%")
+      : ""
     slotSize: Style.bar.iconSlot * (root.showPercentage && !vertical ? 2 : 1)
     tooltipText: ""
     onPressed: function(b) {
@@ -283,25 +285,33 @@ Panel {
     owner: root
     bar: root.bar
     open: root.opened && root.batteryPresent
-    focusTarget: keyCatcher
+    focusTarget: panel.loadedContent
     contentWidth: panel.fittedContentWidth(Style.space(380))
-    contentHeight: panel.fittedContentHeight(column.implicitHeight)
+    contentHeight: panel.fittedContentHeight(panel.loadedContentHeight)
 
-    PanelKeyCatcher {
+    content: PanelKeyCatcher {
       id: keyCatcher
+      property alias heroStatus: heroStatus
+      property alias column: column
+      property alias details: diagnosticDetails
       anchors.fill: parent
+      implicitHeight: column.implicitHeight
+      function revealProfiles() {
+        var bottom = profileRow.mapToItem(column, 0, 0).y + profileRow.height
+        contentFlick.contentY = Math.max(0, Math.min(contentFlick.contentHeight - contentFlick.height, bottom - contentFlick.height))
+      }
       onMoveRequested: function(dx, dy) {
-        if (!root.cursorActive) { root.cursorActive = true; Qt.callLater(root.revealProfiles); return }
+        if (!root.cursorActive) { root.cursorActive = true; Qt.callLater(keyCatcher.revealProfiles); return }
         if (dx !== 0) root.selectProfileByDelta(dx)
         else if (dy !== 0) root.selectProfileByDelta(dy)
-        Qt.callLater(root.revealProfiles)
+        Qt.callLater(keyCatcher.revealProfiles)
       }
       onActivateRequested: if (root.cursorActive) root.activateSelectedProfile()
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onTextKey: function(t) {
-        if (t === "g") diagnosticDetails.historyOpen = !diagnosticDetails.historyOpen
-        else if (t === "d") diagnosticDetails.detailsOpen = !diagnosticDetails.detailsOpen
+        if (t === "g") root.historyOpen = !root.historyOpen
+        else if (t === "d") root.detailsOpen = !root.detailsOpen
       }
 
       Flickable {
@@ -333,7 +343,7 @@ Panel {
             anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
 
-            Behavior on color { ColorAnimation { duration: 200 } }
+            Behavior on color { ColorAnimation { duration: Style.duration(200) } }
           }
 
           Column {
@@ -346,7 +356,8 @@ Panel {
             spacing: Style.space(2)
 
             Text {
-              text: "Battery"
+              text: Commons.I18n.t("power.battery")
+              textFormat: Text.PlainText
               color: root.contentForeground
               font.family: root.contentFontFamily
               font.pixelSize: Style.font.title
@@ -372,7 +383,7 @@ Panel {
           Text {
             id: heroPercent
             textFormat: Text.PlainText
-            text: root.diagnosis.battery && Diagnostics.known(root.diagnosis.battery.percentage) ? Math.round(root.diagnosis.battery.percentage) + "%" : "—"
+            text: root.diagnosis.battery && Diagnostics.known(root.diagnosis.battery.percentage) ? Commons.I18n.formatNumber(Math.round(root.diagnosis.battery.percentage)) + "%" : "—"
             color: root.contentForeground
             font.family: root.contentFontFamily
             font.pixelSize: Style.font.displayLarge
@@ -380,7 +391,7 @@ Panel {
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
 
-            Behavior on color { ColorAnimation { duration: 200 } }
+            Behavior on color { ColorAnimation { duration: Style.duration(200) } }
           }
         }
 
@@ -406,16 +417,16 @@ Panel {
             color: root.batteryFillColor
             width: Math.max(barTrack.height, barTrack.width * root.batteryFraction)
 
-            Behavior on width { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
-            Behavior on color { ColorAnimation { duration: 220 } }
+            Behavior on width { NumberAnimation { duration: Style.duration(320); easing.type: Easing.OutCubic } }
+            Behavior on color { ColorAnimation { duration: Style.duration(220) } }
 
             // Subtle pulse while charging — visible signal that energy is flowing in.
             SequentialAnimation on opacity {
-              running: root.charging && root.opened
+              running: root.charging && root.opened && !Style.reduceMotion
               loops: Animation.Infinite
               alwaysRunToEnd: true
-              NumberAnimation { from: 1.0; to: 0.55; duration: 950; easing.type: Easing.InOutSine }
-              NumberAnimation { from: 0.55; to: 1.0; duration: 950; easing.type: Easing.InOutSine }
+              NumberAnimation { from: 1.0; to: 0.55; duration: Style.duration(950); easing.type: Easing.InOutSine }
+              NumberAnimation { from: 0.55; to: 1.0; duration: Style.duration(950); easing.type: Easing.InOutSine }
             }
           }
         }
@@ -423,6 +434,10 @@ Panel {
         BatteryDetails {
           id: diagnosticDetails
           width: parent.width
+          Binding on detailsOpen { value: root.detailsOpen }
+          Binding on historyOpen { value: root.historyOpen }
+          onDetailsOpenChanged: root.detailsOpen = detailsOpen
+          onHistoryOpenChanged: root.historyOpen = historyOpen
           snapshot: root.telemetry
           reading: root.diagnosis
           now: Local.PowerStore.now
@@ -443,7 +458,7 @@ Panel {
           spacing: Style.space(10)
 
           PanelSectionHeader {
-            text: "POWER PROFILE"
+            text: Commons.I18n.t("power.powerProfile")
             foreground: root.contentForeground
             fontFamily: root.contentFontFamily
           }
@@ -465,7 +480,7 @@ Panel {
                 width: profileRow.cellWidth
                 iconText: root.profileIcon(String(modelData))
                 iconSize: Style.font.title
-                text: String(modelData).charAt(0).toUpperCase() + String(modelData).slice(1)
+                text: Model.profileLabel(modelData, Commons.I18n.t)
                 fontSize: Style.font.bodySmall
                 foreground: root.contentForeground
                 fontFamily: root.contentFontFamily
